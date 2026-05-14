@@ -152,5 +152,64 @@ class DokimasiaAgentAdapterTests(unittest.TestCase):
         self.assertEqual([event.name for event in events if event.kind == "skill.loaded"], ["create-record"])
 
 
+class DokimasiaScenarioLoaderTests(unittest.TestCase):
+    def test_load_yaml_scenarios_merges_defaults(self):
+        from dokimasia.core.scenarios import load_scenarios
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            defaults = root / "defaults.yaml"
+            scenarios = root / "scenarios.yaml"
+            defaults.write_text(
+                """
+execution:
+  timeout_seconds: 10
+expect_audit:
+  budgets:
+    total_commands:
+      max: 5
+""",
+                encoding="utf-8",
+            )
+            scenarios.write_text(
+                """
+scenarios:
+  - name: one
+    prompt: Run {{ run.id }}
+    expect_trace:
+      events: []
+""",
+                encoding="utf-8",
+            )
+            loaded = load_scenarios(scenarios, defaults)
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0].execution["timeout_seconds"], 10)
+        self.assertEqual(loaded[0].expect_audit["budgets"]["total_commands"], {"max": 5})
+
+    def test_load_json_scenarios_for_backwards_compatibility(self):
+        from dokimasia.core.scenarios import load_scenarios
+
+        with tempfile.TemporaryDirectory() as tmp:
+            scenarios = Path(tmp) / "scenarios.json"
+            scenarios.write_text(
+                json.dumps(
+                    {
+                        "scenarios": [
+                            {
+                                "name": "json scenario",
+                                "prompt": "Run it",
+                                "tags": ["compat"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            loaded = load_scenarios(scenarios)
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0].name, "json scenario")
+        self.assertEqual(loaded[0].tags, ["compat"])
+
+
 if __name__ == "__main__":
     unittest.main()
