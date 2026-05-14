@@ -79,6 +79,37 @@ class DokimasiaCoreTests(unittest.TestCase):
             self.assertEqual(seen_expectations, [{"match": {"title": "Run abc123", "labels": ["org"]}}])
 
 
+    def test_runner_uses_configured_audit_log_env_var(self):
+        captured_env = {}
+
+        class FakeAdapter:
+            def run(self, prompt, workspace, artifact_dir, env, timeout_seconds):
+                captured_env.update(env)
+                stdout = artifact_dir / "stdout.txt"
+                stderr = artifact_dir / "stderr.txt"
+                stdout.write_text("", encoding="utf-8")
+                stderr.write_text("", encoding="utf-8")
+                Path(env["PROJECT_AUDIT_LOG"]).write_text(
+                    json.dumps({"root": "cli.list", "argv": [], "cwd": str(workspace), "exit_code": 0, "mutates": False, "source": "cli"}) + "\n",
+                    encoding="utf-8",
+                )
+                return AgentRunResult(0, stdout, stderr, None, [], 0.01, False)
+
+        def normalizer(raw):
+            return AuditEvent(raw["root"], raw["argv"], raw["cwd"], raw["exit_code"], raw["mutates"], raw["source"], raw)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ctx = RunContext("abc123", "org", "repo", root / "workspace", root / "artifacts")
+            ctx.workspace.mkdir()
+            scenario = Scenario(name="audit env", prompt="Do it")
+            result = ScenarioRunner(FakeAdapter(), normalizer, lambda expectations, ctx: [], audit_log_env_var="PROJECT_AUDIT_LOG").run(scenario, ctx, {})
+            self.assertTrue(result.passed, result.message)
+            self.assertIn("PROJECT_AUDIT_LOG", captured_env)
+            self.assertNotIn("DOKIMASIA_AUDIT_LOG", captured_env)
+            self.assertEqual([event.root for event in result.audit_events], ["cli.list"])
+
+
 class DokimasiaAgentAdapterTests(unittest.TestCase):
     def test_claude_parser_extracts_plugin_qualified_skill_loaded(self):
         from dokimasia.agents.claude_code import parse_claude_stream_json
