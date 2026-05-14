@@ -6,10 +6,22 @@ The package is intentionally domain-neutral. It does not know about any specific
 
 CLI name: `doki`.
 
-## Development install
+## Development setup
 
 ```bash
-python -m pip install -e /Users/sh/Projects/dokimasia
+uv sync
+```
+
+Run tests:
+
+```bash
+uv run python -m unittest
+```
+
+Run package commands inside the uv-managed environment:
+
+```bash
+uv run python -c "import dokimasia; print(dokimasia.__name__)"
 ```
 
 ## Python usage
