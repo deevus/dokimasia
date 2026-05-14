@@ -71,6 +71,9 @@ def create_cli_spy(
 
 `executable_name` must be a single file name, not a path. This prevents accidental wrapper creation outside the generated `bin/` directory.
 
+
+`root`, `real_executable`, and `audit_log` are resolved to absolute paths at creation time so generated wrappers keep working when the agent invokes them from a different working directory. The generated wrapper also uses the current Python interpreter as an absolute shebang instead of `#!/usr/bin/env python3`, allowing spies for names such as `python3` without recursive PATH lookup.
+
 ## Event shape
 
 The wrapper preserves the current compatible event shape:
@@ -116,6 +119,9 @@ Add unit tests that exercise the generated wrapper as a real executable:
 - wrapper forwards argv and records `source`, `argv`, `cwd`, `phase`, and `exit_code`;
 - wrapper records failed exits and returns the real exit code;
 - invalid executable names are rejected.
+
+- relative creation paths still work when the wrapper is invoked from another directory;
+- spying an executable named `python3` does not recurse through the wrapper shebang.
 
 ## Non-goals
 
