@@ -35,7 +35,7 @@ uv sync
 Primary test command:
 
 ```bash
-uv run python -m unittest
+uv run pytest
 ```
 
 Optional editable/package command if needed:
@@ -64,7 +64,7 @@ Out of scope:
 Run:
 
 ```bash
-uv run python -m unittest
+uv run pytest
 ```
 
 The migration is complete when the test suite passes under uv and README instructions reflect the new workflow.

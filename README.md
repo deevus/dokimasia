@@ -1,8 +1,8 @@
 # Dokimasia
 
-Dokimasia is a generic agent end-to-end harness. It runs single-turn agent scenarios, preserves artifacts, normalizes traces, and asserts that expected trace/audit/state evidence exists.
+Dokimasia is a pytest-first generic agent end-to-end harness. It gives pytest suites fixtures for running a single agent turn, preserving artifacts, normalizing traces, and asserting project-specific evidence with normal pytest assertions.
 
-The package is intentionally domain-neutral. It does not know about any specific product, CLI, issue tracker, or skill repository. Projects provide provisioning, audit normalization, and state verification.
+The package is intentionally domain-neutral. It does not know about any specific product, CLI, issue tracker, or skill repository. Projects provide provisioning, audit normalization, state verification, and project-owned fixtures.
 
 CLI name: `doki`.
 
@@ -15,7 +15,7 @@ uv sync
 Run tests:
 
 ```bash
-uv run python -m unittest
+uv run pytest
 ```
 
 Run package commands inside the uv-managed environment:
@@ -26,13 +26,28 @@ uv run python -c "import dokimasia; print(dokimasia.__name__)"
 
 ## Python usage
 
+Author Dokimasia suites as ordinary pytest modules. Use plain Python setup code, project-owned fixtures, pytest marks, and normal pytest assertions instead of loading declarative scenario files:
+
 ```python
-from dokimasia.core.runner import ScenarioRunner
-from dokimasia.core.scenarios import load_scenarios
-from dokimasia.agents.claude_code import ClaudeCodeAdapter
+import pytest
+
+from dokimasia.pytest import assert_command_ran, cmd
+
+ISSUE_CREATE = cmd.match("tea", pattern=[("issues", "issue"), "create"])
+
+
+@pytest.mark.agent_e2e
+def test_agent_creates_issue(doki_factory, prepared_repo):
+    doki = doki_factory(agent="pi", workspace=prepared_repo)
+
+    result = doki.run("Create the requested issue")
+
+    assert result.ok, result.failure_summary
+    assert result.has_skill_loaded("create-issue")
+    assert_command_ran(result, ISSUE_CREATE)
 ```
 
-Project suites provide provisioning, audit normalization, and state verification.
+Project suites provide provisioning, audit normalization, state verification, and fixtures for their own domain objects.
 
 ## Pytest command matchers
 

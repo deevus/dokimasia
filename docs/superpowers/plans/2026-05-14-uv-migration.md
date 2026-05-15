@@ -4,9 +4,9 @@
 
 **Goal:** Migrate Dokimasia's development workflow from direct pip commands to uv with a committed lockfile and verified uv-based test command.
 
-**Architecture:** Keep the existing setuptools-based package metadata in `pyproject.toml`; use uv only for environment synchronization, dependency locking, and command execution. The migration is documentation and lockfile focused, with verification through the existing unittest suite.
+**Architecture:** Keep the existing setuptools-based package metadata in `pyproject.toml`; use uv only for environment synchronization, dependency locking, and command execution. The migration is documentation and lockfile focused, with verification through the existing pytest suite.
 
-**Tech Stack:** Python 3.11+, setuptools, PyYAML, uv, unittest.
+**Tech Stack:** Python 3.11+, setuptools, uv, pytest.
 
 ---
 
@@ -80,7 +80,7 @@ Run:
 uv sync
 ```
 
-Expected: command exits 0 and creates/updates the local uv environment. It should install the editable project and runtime dependency `PyYAML`.
+Expected: command exits 0 and creates/updates the local uv environment. It should install the editable project and runtime dependencies.
 
 - [ ] **Step 5: Commit the lockfile**
 
@@ -124,7 +124,7 @@ uv sync
 Run tests:
 
 ```bash
-uv run python -m unittest
+uv run pytest
 ```
 
 Run package commands inside the uv-managed environment:
@@ -139,10 +139,10 @@ uv run python -c "import dokimasia; print(dokimasia.__name__)"
 Run:
 
 ```bash
-rg -n "uv sync|uv run python -m unittest|pip install" README.md
+rg -n "uv sync|uv run pytest|pip install" README.md
 ```
 
-Expected: output contains `uv sync` and `uv run python -m unittest`, and does not contain the old `python -m pip install -e /Users/sh/Projects/dokimasia` command.
+Expected: output contains `uv sync` and `uv run pytest`, and does not contain the old `python -m pip install -e /Users/sh/Projects/dokimasia` command.
 
 - [ ] **Step 3: Commit README changes**
 
@@ -169,7 +169,7 @@ Expected: commit succeeds with README changes only.
 Run:
 
 ```bash
-uv run python -m unittest
+uv run pytest
 ```
 
 Expected: all tests pass. Current expected shape:

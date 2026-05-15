@@ -6,7 +6,7 @@
 
 **Architecture:** Add a focused `dokimasia.scaffold.cli_spy` module with a `CliSpy` dataclass and `create_cli_spy` factory. Keep the helper generic; consuming projects choose executable names, real paths, source labels, and audit normalization.
 
-**Tech Stack:** Python 3.11+ stdlib, unittest, subprocess, pathlib, dataclasses.
+**Tech Stack:** Python 3.11+ stdlib, pytest, subprocess, pathlib, dataclasses.
 
 ---
 
@@ -31,7 +31,7 @@ Create `tests/test_cli_spy.py` with tests that import `create_cli_spy`, create a
 Run:
 
 ```bash
-python -m unittest tests.test_cli_spy -v
+python -m pytest tests/test_cli_spy.py
 ```
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'dokimasia.scaffold'`.
@@ -62,8 +62,8 @@ Create `src/dokimasia/scaffold/cli_spy.py` with:
 Run:
 
 ```bash
-python -m unittest tests.test_cli_spy -v
-python -m unittest discover -s tests -v
+python -m pytest tests/test_cli_spy.py
+python -m pytest
 ```
 
 Expected: all tests pass.
@@ -82,7 +82,7 @@ Add a short `CLI spy scaffolding` section showing `create_cli_spy(...)` and `spy
 Run:
 
 ```bash
-python -m unittest discover -s tests -v
+python -m pytest
 ```
 
 Expected: all tests pass.
