@@ -50,6 +50,7 @@ def create_spy(
     audit_log: Path,
     source: str,
     extra_event_fields: Mapping[str, Any] | None = None,
+    audit_log_env_var: str | None = None,
 ) -> CommandSpy:
     _validate_executable_name(executable_name)
 
@@ -63,6 +64,7 @@ def create_spy(
 
     extra_fields = dict(extra_event_fields or {})
     extra_fields_json = json.dumps(extra_fields, sort_keys=True)
+    audit_log_env_var_json = json.dumps(audit_log_env_var)
     wrapper = bin_dir / executable_name
     wrapper.write_text(
         f"""#!{sys.executable}
@@ -76,9 +78,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 real = {str(real_executable)!r}
-audit = Path({str(audit_log)!r})
+default_audit = Path({str(audit_log)!r})
+audit_env_var = json.loads({audit_log_env_var_json!r})
 source = {source!r}
 extra_event_fields = json.loads({extra_fields_json!r})
+audit = Path(os.environ.get(audit_env_var, str(default_audit))) if audit_env_var else default_audit
 argv = sys.argv[1:]
 proc = subprocess.run([real] + argv, text=False)
 event = dict(extra_event_fields)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -24,6 +25,20 @@ _BUILT_IN_AGENTS = {
     "claude_code": ClaudeCodeAdapter,
     "pi": PiAdapter,
 }
+
+_COMMAND_LOG_ENV_VAR = "DOKIMASIA_COMMAND_LOG"
+
+
+def _load_command_log(path: Path) -> list[CommandInvocation]:
+    if not path.exists():
+        return []
+
+    commands: list[CommandInvocation] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        commands.append(normalize_invocation(json.loads(line)))
+    return commands
 
 
 def _resolve_agent(agent: Any | None) -> Any:
@@ -66,7 +81,16 @@ class DokiResult:
     commands: list[CommandInvocation] = field(default_factory=list)
 
     @classmethod
-    def from_agent_result(cls, agent_result: AgentRunResult, artifact_dir: Path) -> "DokiResult":
+    def from_agent_result(
+        cls,
+        agent_result: AgentRunResult,
+        artifact_dir: Path,
+        command_log_path: Path | None = None,
+    ) -> "DokiResult":
+        if command_log_path is None:
+            commands = [normalize_invocation(command) for command in getattr(agent_result, "commands", [])]
+        else:
+            commands = _load_command_log(command_log_path)
         return cls(
             exit_code=agent_result.exit_code,
             timed_out=agent_result.timed_out,
@@ -76,7 +100,7 @@ class DokiResult:
             raw_trace_path=agent_result.raw_trace_path,
             trace_events=agent_result.trace_events,
             duration_seconds=agent_result.duration_seconds,
-            commands=[normalize_invocation(command) for command in getattr(agent_result, "commands", [])],
+            commands=commands,
         )
 
     @property
@@ -163,10 +187,13 @@ class Doki:
         self._run_count += 1
         artifact_dir = self.artifact_root / self._artifact_slug(artifact_name)
         artifact_dir.mkdir(parents=True, exist_ok=True)
+        command_log = artifact_dir / "commands.jsonl"
+        command_log.write_text("", encoding="utf-8")
 
         run_env = dict(self.env)
         if env:
             run_env.update(env)
+        run_env[_COMMAND_LOG_ENV_VAR] = str(command_log)
 
         agent_result = self.agent.run(
             prompt,
@@ -175,7 +202,8 @@ class Doki:
             run_env,
             self.timeout_seconds if timeout_seconds is None else timeout_seconds,
         )
-        return DokiResult.from_agent_result(agent_result, artifact_dir)
+        command_source = command_log if self.command_spies else None
+        return DokiResult.from_agent_result(agent_result, artifact_dir, command_source)
 
     def _artifact_slug(self, artifact_name: str | None) -> str:
         run_slug = f"run-{self._run_count}"
@@ -222,6 +250,7 @@ def _materialize_command_spies(
             real_executable=real_executable,
             audit_log=audit_log,
             source=spec.source,
+            audit_log_env_var=_COMMAND_LOG_ENV_VAR,
         )
         for spec, real_executable in resolved
     )

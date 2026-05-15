@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from dokimasia.agents.claude_code import ClaudeCodeAdapter
@@ -52,6 +53,61 @@ class FalsyFakeAdapter(FakeAdapter):
         return False
 
 
+class SubprocessAdapter:
+    def __init__(self, commands: Sequence[Sequence[str]]):
+        self.commands = [list(command) for command in commands]
+        self.calls: list[dict[str, object]] = []
+
+    def run(self, prompt, workspace, artifact_dir, env, timeout_seconds):
+        command = self.commands[len(self.calls)]
+        completed = subprocess.run(
+            command,
+            cwd=workspace,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "workspace": workspace,
+                "artifact_dir": artifact_dir,
+                "env": dict(env),
+                "command": command,
+            }
+        )
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        stdout_path = artifact_dir / "agent.stdout.txt"
+        stderr_path = artifact_dir / "agent.stderr.txt"
+        raw_trace_path = artifact_dir / "trace.jsonl"
+        stdout_path.write_text(completed.stdout, encoding="utf-8")
+        stderr_path.write_text(completed.stderr, encoding="utf-8")
+        raw_trace_path.write_text("", encoding="utf-8")
+        return AgentRunResult(
+            exit_code=completed.returncode,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            raw_trace_path=raw_trace_path,
+            trace_events=[],
+            duration_seconds=0.01,
+            timed_out=False,
+        )
+
+
+def _write_python_tool(path: Path, *, exit_code: int = 0, shebang: str | None = None) -> None:
+    path.write_text(
+        f"{shebang or f'#!{sys.executable}'}\n"
+        "from __future__ import annotations\n"
+        "import sys\n"
+        f"raise SystemExit({exit_code})\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
 def test_default_doki_fixture_is_available(doki):
     assert doki.run_id
     assert doki.workspace.exists()
@@ -77,7 +133,11 @@ def test_doki_factory_runs_agent_and_returns_artifacted_result(doki_factory, tmp
             "prompt": "create an issue",
             "workspace": workspace,
             "artifact_dir": artifact_root / "run-1-first-turn",
-            "env": {"BASE": "1", "RUN": "2"},
+            "env": {
+                "BASE": "1",
+                "RUN": "2",
+                "DOKIMASIA_COMMAND_LOG": str(artifact_root / "run-1-first-turn" / "commands.jsonl"),
+            },
             "timeout_seconds": 7,
         }
     ]
@@ -90,6 +150,24 @@ def test_doki_factory_runs_agent_and_returns_artifacted_result(doki_factory, tmp
     assert result.stdout_text == "agent stdout"
     assert result.stderr_text == "agent stderr"
     assert result.failure_summary == ""
+
+
+def test_doki_run_preserves_adapter_commands_when_no_spies_are_registered(doki_factory, tmp_path):
+    class AgentCommandAdapter(FakeAdapter):
+        def run(self, prompt, workspace, artifact_dir, env, timeout_seconds):
+            result = super().run(prompt, workspace, artifact_dir, env, timeout_seconds)
+            result.commands = [{"source": "adapter", "argv": ["one"], "exit_code": 0}]
+            return result
+
+    result = doki_factory(
+        agent=AgentCommandAdapter(),
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    ).run("adapter commands")
+
+    assert (result.artifact_dir / "commands.jsonl").exists()
+    assert [command.executable for command in result.commands] == ["adapter"]
+    assert [command.argv for command in result.commands] == [["one"]]
 
 
 def test_doki_factory_materializes_static_command_spies(doki_factory, tmp_path):
@@ -138,6 +216,68 @@ def test_doki_factory_materializes_static_command_spies(doki_factory, tmp_path):
     events = [json.loads(line) for line in doki.command_spies[0].audit_log.read_text(encoding="utf-8").splitlines()]
     assert events[0]["source"] == "tea"
     assert events[0]["argv"] == ["issues", "list"]
+
+
+def test_doki_run_captures_spied_commands_in_per_run_command_logs(doki_factory, tmp_path):
+    host_bin = tmp_path / "host-bin"
+    host_bin.mkdir()
+    _write_python_tool(host_bin / "task")
+    path = os.pathsep.join([str(host_bin), os.environ.get("PATH", "")])
+    artifact_root = tmp_path / "artifacts"
+    workspace = tmp_path / "workspace"
+
+    doki = doki_factory(
+        agent=SubprocessAdapter([["task", "one"], ["task", "two"]]),
+        workspace=workspace,
+        artifact_dir=artifact_root,
+        env={"PATH": path},
+        spies=[cmd.spy("task")],
+    )
+
+    first = doki.run("first")
+    second = doki.run("second")
+
+    first_log = first.artifact_dir / "commands.jsonl"
+    second_log = second.artifact_dir / "commands.jsonl"
+    assert first_log.exists()
+    assert second_log.exists()
+    assert first_log != second_log
+    assert [command.argv for command in first.commands] == [["one"]]
+    assert [command.argv for command in second.commands] == [["two"]]
+    assert first.commands[0].executable == "task"
+    assert first.commands[0].source == "task"
+    assert first.commands[0].raw["cwd"] == str(workspace)
+    assert first.commands[0].exit_code == 0
+    assert json.loads(first_log.read_text(encoding="utf-8").strip())["argv"] == ["one"]
+    assert json.loads(second_log.read_text(encoding="utf-8").strip())["argv"] == ["two"]
+
+
+def test_interpreter_invocations_are_logged_only_when_interpreter_is_spied(doki_factory, tmp_path):
+    host_bin = tmp_path / "host-bin"
+    host_bin.mkdir()
+    _write_python_tool(host_bin / "task", shebang="#!/usr/bin/env python3")
+    path = os.pathsep.join([str(host_bin), os.environ.get("PATH", "")])
+
+    task_only = doki_factory(
+        agent=SubprocessAdapter([["task"]]),
+        workspace=tmp_path / "workspace-task-only",
+        artifact_dir=tmp_path / "artifacts-task-only",
+        env={"PATH": path},
+        spies=[cmd.spy("task")],
+    )
+    with_interpreter = doki_factory(
+        agent=SubprocessAdapter([["task"]]),
+        workspace=tmp_path / "workspace-with-interpreter",
+        artifact_dir=tmp_path / "artifacts-with-interpreter",
+        env={"PATH": path},
+        spies=[cmd.spy("task"), cmd.spy("python3")],
+    )
+
+    task_only_result = task_only.run("task only")
+    with_interpreter_result = with_interpreter.run("with interpreter")
+
+    assert [command.executable for command in task_only_result.commands] == ["task"]
+    assert sorted(command.executable for command in with_interpreter_result.commands) == ["python3", "task"]
 
 
 def test_result_has_skill_loaded_matches_loaded_skill_names(doki_factory, tmp_path):
