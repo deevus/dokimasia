@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Any
+from typing import Any, Mapping
 import json
 import os
 import stat
@@ -10,7 +10,7 @@ import sys
 
 
 @dataclass(frozen=True)
-class CliSpy:
+class CommandSpy:
     bin_dir: Path
     audit_log: Path
     real_executable: Path
@@ -44,14 +44,14 @@ def _validate_executable_name(executable_name: str) -> None:
         raise ValueError(f"executable_name must not contain PATH separators: {executable_name!r}")
 
 
-def create_cli_spy(
+def create_spy(
     root: Path,
     executable_name: str,
     real_executable: Path,
     audit_log: Path,
     source: str,
     extra_event_fields: Mapping[str, Any] | None = None,
-) -> CliSpy:
+) -> CommandSpy:
     _validate_executable_name(executable_name)
 
     root = Path(root).resolve()
@@ -101,7 +101,7 @@ raise SystemExit(proc.returncode)
     )
     wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    return CliSpy(
+    return CommandSpy(
         bin_dir=bin_dir,
         audit_log=audit_log,
         real_executable=real_executable,
@@ -111,4 +111,4 @@ raise SystemExit(proc.returncode)
     )
 
 
-__all__ = ["CliSpy", "create_cli_spy"]
+__all__ = ["CommandSpy", "create_spy"]

@@ -35,17 +35,17 @@ from dokimasia.agents.claude_code import ClaudeCodeAdapter
 Project suites provide provisioning, audit normalization, and state verification.
 
 
-## CLI spy scaffolding
+## Suite command spy
 
-Use `create_cli_spy` when a suite needs to put an audited wrapper earlier in `PATH` while forwarding to the real executable:
+Use `create_spy` when a suite needs to put an audited wrapper earlier in `PATH` while forwarding to the real executable:
 
 ```python
 from pathlib import Path
 import os
 
-from dokimasia.scaffold.cli_spy import create_cli_spy
+from dokimasia.suite.spy import create_spy
 
-spy = create_cli_spy(
+spy = create_spy(
     root=Path(".e2e-artifacts/run/spy"),
     executable_name="example-cli",
     real_executable=Path("/usr/local/bin/example-cli"),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import subprocess
@@ -8,10 +9,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from dokimasia.scaffold.cli_spy import create_cli_spy
+from dokimasia.suite.spy import CommandSpy, create_spy
 
 
-class CliSpyTests(unittest.TestCase):
+class CommandSpyTests(unittest.TestCase):
     def _write_real_executable(self, root: Path, exit_code: int = 0) -> Path:
         real = root / "real_cli.py"
         real.write_text(
@@ -34,20 +35,21 @@ raise SystemExit({exit_code})
         real.chmod(0o755)
         return real
 
-    def test_create_cli_spy_creates_executable_wrapper_and_path_environment(self):
+    def test_create_spy_creates_executable_wrapper_and_path_environment(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             record_path = root / "real-record.json"
             audit_log = root / "artifacts" / "audit.jsonl"
             real = self._write_real_executable(root)
 
-            spy = create_cli_spy(
+            spy = create_spy(
                 root=root / "spy",
                 executable_name="demo",
                 real_executable=real,
                 audit_log=audit_log,
                 source="demo-source",
             )
+            self.assertIsInstance(spy, CommandSpy)
 
             wrapper = Path(spy.path_prefix) / "demo"
             self.assertTrue(wrapper.exists())
@@ -81,14 +83,14 @@ raise SystemExit({exit_code})
             self.assertIsInstance(event["pid"], int)
             self.assertIn("timestamp", event)
 
-    def test_cli_spy_records_nonzero_exit_and_preserves_core_fields_over_extra_fields(self):
+    def test_command_spy_records_nonzero_exit_and_preserves_core_fields_over_extra_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             record_path = root / "real-record.json"
             audit_log = root / "audit.jsonl"
             real = self._write_real_executable(root, exit_code=7)
 
-            spy = create_cli_spy(
+            spy = create_spy(
                 root=root / "spy",
                 executable_name="demo",
                 real_executable=real,
@@ -106,7 +108,7 @@ raise SystemExit({exit_code})
             self.assertEqual(event["source"], "demo-source")
             self.assertEqual(event["exit_code"], 7)
 
-    def test_cli_spy_uses_absolute_paths_when_invoked_from_another_directory(self):
+    def test_command_spy_uses_absolute_paths_when_invoked_from_another_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             setup_dir = root / "setup"
@@ -119,7 +121,7 @@ raise SystemExit({exit_code})
             try:
                 os.chdir(setup_dir)
                 real = self._write_real_executable(setup_dir)
-                spy = create_cli_spy(
+                spy = create_spy(
                     root=Path("spy"),
                     executable_name="demo",
                     real_executable=Path("real_cli.py"),
@@ -136,11 +138,11 @@ raise SystemExit({exit_code})
             self.assertEqual(json.loads(record_path.read_text(encoding="utf-8"))["argv"], ["from-other-cwd"])
             self.assertTrue((setup_dir / "audit" / "audit.jsonl").exists())
 
-    def test_cli_spy_can_wrap_python3_without_shebang_recursion(self):
+    def test_command_spy_can_wrap_python3_without_shebang_recursion(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             audit_log = root / "audit.jsonl"
-            spy = create_cli_spy(
+            spy = create_spy(
                 root=root / "spy",
                 executable_name="python3",
                 real_executable=Path(sys.executable),
@@ -162,7 +164,7 @@ raise SystemExit({exit_code})
             self.assertEqual(result.stdout.strip(), "wrapped interpreter")
             self.assertEqual(json.loads(audit_log.read_text(encoding="utf-8").strip())["argv"], ["-c", "print('wrapped interpreter')"])
 
-    def test_create_cli_spy_rejects_executable_names_that_are_paths(self):
+    def test_create_spy_rejects_executable_names_that_are_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             real = self._write_real_executable(root)
@@ -170,13 +172,18 @@ raise SystemExit({exit_code})
             for executable_name in invalid_names:
                 with self.subTest(executable_name=executable_name):
                     with self.assertRaises(ValueError):
-                        create_cli_spy(
+                        create_spy(
                             root=root / "spy",
                             executable_name=executable_name,
                             real_executable=real,
                             audit_log=root / "audit.jsonl",
                             source="demo-source",
                         )
+
+
+    def test_old_scaffold_spy_namespace_is_removed(self):
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("dokimasia.scaffold.cli_spy")
 
 
 if __name__ == "__main__":
