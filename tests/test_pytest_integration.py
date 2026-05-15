@@ -69,17 +69,17 @@ def test_doki_factory_runs_agent_and_returns_artifacted_result(doki_factory, tmp
         {
             "prompt": "create an issue",
             "workspace": workspace,
-            "artifact_dir": artifact_root / "first-turn",
+            "artifact_dir": artifact_root / "run-1-first-turn",
             "env": {"BASE": "1", "RUN": "2"},
             "timeout_seconds": 7,
         }
     ]
     assert result.ok is True
-    assert result.artifact_dir == artifact_root / "first-turn"
-    assert result.raw_trace_path == artifact_root / "first-turn" / "trace.jsonl"
+    assert result.artifact_dir == artifact_root / "run-1-first-turn"
+    assert result.raw_trace_path == artifact_root / "run-1-first-turn" / "trace.jsonl"
     assert result.trace_events == [TraceEvent(kind="skill.loaded", name="plugin:create-issue")]
-    assert result.stdout_path == artifact_root / "first-turn" / "agent.stdout.txt"
-    assert result.stderr_path == artifact_root / "first-turn" / "agent.stderr.txt"
+    assert result.stdout_path == artifact_root / "run-1-first-turn" / "agent.stdout.txt"
+    assert result.stderr_path == artifact_root / "run-1-first-turn" / "agent.stderr.txt"
     assert result.stdout_text == "agent stdout"
     assert result.stderr_text == "agent stderr"
     assert result.failure_summary == ""
@@ -97,6 +97,58 @@ def test_doki_factory_preserves_explicit_falsy_adapter(doki_factory, tmp_path):
 
     assert result.ok is True
     assert [call["prompt"] for call in agent.calls] == ["still run"]
+
+
+def test_run_id_workspace_and_default_artifact_root_are_stable_for_fixture_instance(doki_factory):
+    agent = FakeAdapter()
+    doki = doki_factory(agent=agent)
+
+    original_run_id = doki.run_id
+    written = doki.write_file("notes/input.txt", "hello")
+    first = doki.run("first")
+    second = doki.run("second")
+
+    assert doki.run_id == original_run_id
+    assert written == doki.workspace / "notes/input.txt"
+    assert written.read_text(encoding="utf-8") == "hello"
+    assert doki.artifact_root.parent.name == ".doki-artifacts"
+    assert doki.artifact_root.name == (
+        "tests-test-pytest-integration-py-"
+        "test-run-id-workspace-and-default-artifact-root-are-stable-for-fixture-instance"
+    )
+    assert first.artifact_dir == doki.artifact_root / "run-1"
+    assert second.artifact_dir == doki.artifact_root / "run-2"
+    assert first.artifact_dir != second.artifact_dir
+
+
+def test_write_file_rejects_paths_outside_workspace(doki_factory, tmp_path):
+    doki = doki_factory(workspace=tmp_path / "workspace")
+
+    for unsafe_path in ["../outside.txt", tmp_path / "outside.txt"]:
+        try:
+            doki.write_file(unsafe_path, "nope")
+        except ValueError as error:
+            assert "inside the workspace" in str(error)
+        else:
+            raise AssertionError(f"expected ValueError for {unsafe_path!r}")
+
+    assert not (tmp_path / "outside.txt").exists()
+
+
+def test_named_artifacts_remain_isolated_per_run(doki_factory, tmp_path):
+    agent = FakeAdapter()
+    doki = doki_factory(
+        agent=agent,
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    first = doki.run("first", artifact_name="setup phase")
+    second = doki.run("second", artifact_name="setup phase")
+
+    assert first.artifact_dir == tmp_path / "artifacts" / "run-1-setup-phase"
+    assert second.artifact_dir == tmp_path / "artifacts" / "run-2-setup-phase"
+    assert first.artifact_dir != second.artifact_dir
 
 
 def test_result_ok_and_failure_summary_report_agent_health_only(doki_factory, tmp_path):
