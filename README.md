@@ -34,6 +34,21 @@ from dokimasia.agents.claude_code import ClaudeCodeAdapter
 
 Project suites provide provisioning, audit normalization, and state verification.
 
+## Suite layout helpers
+
+Use layout helpers for domain-neutral run ids and artifact directories:
+
+```python
+from pathlib import Path
+
+from dokimasia.suite.layout import create_run_id, prepare_run_root, prepare_scenario_dir
+
+run_id = create_run_id()
+run_root = prepare_run_root(Path(".e2e-artifacts"), run_id)
+scenario_dir = prepare_scenario_dir(run_root / "artifacts", "Create issue")
+```
+
+`prepare_run_root` creates `<base>/<run-id>`. `prepare_scenario_dir` creates a safe hyphenated directory name such as `Create-issue`.
 
 ## Suite command spy
 

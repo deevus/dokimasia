@@ -9,6 +9,7 @@ description = "Generic agent end-to-end evaluation harness"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "python-slugify>=8.0.4",
   "PyYAML>=6.0",
 ]
 
