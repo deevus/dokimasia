@@ -65,7 +65,7 @@ def create_spy(
     extra_fields_json = json.dumps(extra_fields, sort_keys=True)
     wrapper = bin_dir / executable_name
     wrapper.write_text(
-        f'''#!{sys.executable}
+        f"""#!{sys.executable}
 from __future__ import annotations
 
 import json
@@ -95,7 +95,7 @@ audit.parent.mkdir(parents=True, exist_ok=True)
 with audit.open("a", encoding="utf-8") as handle:
     handle.write(json.dumps(event, sort_keys=True) + "\\n")
 raise SystemExit(proc.returncode)
-''',
+""",
         encoding="utf-8",
     )
     wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

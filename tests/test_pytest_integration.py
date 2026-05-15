@@ -10,7 +10,7 @@ from dokimasia.agents.claude_code import ClaudeCodeAdapter
 from dokimasia.agents.pi import PiAdapter
 
 from dokimasia.core.model import AgentRunResult, TraceEvent
-from dokimasia.pytest import cmd, doki, doki_factory
+from dokimasia.pytest import cmd
 
 
 class FakeAdapter:
@@ -92,7 +92,6 @@ def test_doki_factory_runs_agent_and_returns_artifacted_result(doki_factory, tmp
     assert result.failure_summary == ""
 
 
-
 def test_doki_factory_materializes_static_command_spies(doki_factory, tmp_path):
     host_bin = tmp_path / "host-bin"
     host_bin.mkdir()
@@ -141,7 +140,6 @@ def test_doki_factory_materializes_static_command_spies(doki_factory, tmp_path):
     assert events[0]["argv"] == ["issues", "list"]
 
 
-
 def test_result_has_skill_loaded_matches_loaded_skill_names(doki_factory, tmp_path):
     result = doki_factory(
         agent=FakeAdapter(),
@@ -181,7 +179,6 @@ def test_result_has_skill_loaded_exact_requires_full_skill_name(doki_factory, tm
 
     assert result.has_skill_loaded("create-issue", exact=True) is False
     assert result.has_skill_loaded("plugin:create-issue", exact=True) is True
-
 
 
 def test_doki_factory_preserves_explicit_falsy_adapter(doki_factory, tmp_path):

@@ -16,7 +16,9 @@ def invocation(executable: str, argv: list[str], **extra):
 
 
 class CommandMatcherTests(unittest.TestCase):
-    def test_matchers_are_static_import_time_objects_with_keyword_only_arguments_and_labels(self):
+    def test_matchers_are_static_import_time_objects_with_keyword_only_arguments_and_labels(
+        self,
+    ):
         self.assertEqual(ISSUE_CREATE.label, "tea.issues.create")
         self.assertTrue(ISSUE_CREATE.matches(invocation("tea", ["--repo", "org/repo", "i", "--title", "T", "c"])))
 
@@ -59,23 +61,50 @@ class CommandMatcherTests(unittest.TestCase):
         self.assertTrue(porcelain_status.matches(invocation("git", ["status", "--porcelain=v2"])))
         self.assertFalse(porcelain_status.matches(invocation("git", ["status", "--short"])))
 
-    def test_matchers_cover_common_command_styles_without_parsing_embedded_commands(self):
+    def test_matchers_cover_common_command_styles_without_parsing_embedded_commands(
+        self,
+    ):
         examples = [
-            (cmd.match("tea", pattern=[("issues", "issue", "i"), ("create", "c")]), invocation("tea", ["--repo", "org/repo", "issue", "--title", "T", "create"])),
-            (cmd.match("git", pattern=["status"]), invocation("git", ["-C", "repo", "status", "--short"])),
-            (cmd.match("jj", pattern=["git", "push"], mode="span"), invocation("jj", ["--repo", ".", "git", "push", "--allow-new"])),
-            (cmd.match("gh", pattern=["issue", "create"]), invocation("gh", ["issue", "--repo", "org/repo", "create"])),
-            (cmd.match("xargs", pattern=["tea"]), invocation("xargs", ["-n1", "tea", "issue", "create"])),
+            (
+                cmd.match("tea", pattern=[("issues", "issue", "i"), ("create", "c")]),
+                invocation("tea", ["--repo", "org/repo", "issue", "--title", "T", "create"]),
+            ),
+            (
+                cmd.match("git", pattern=["status"]),
+                invocation("git", ["-C", "repo", "status", "--short"]),
+            ),
+            (
+                cmd.match("jj", pattern=["git", "push"], mode="span"),
+                invocation("jj", ["--repo", ".", "git", "push", "--allow-new"]),
+            ),
+            (
+                cmd.match("gh", pattern=["issue", "create"]),
+                invocation("gh", ["issue", "--repo", "org/repo", "create"]),
+            ),
+            (
+                cmd.match("xargs", pattern=["tea"]),
+                invocation("xargs", ["-n1", "tea", "issue", "create"]),
+            ),
             (cmd.match("ls"), invocation("ls", ["-la", "."])),
-            (cmd.match("bootstrap-workspace", pattern=["--check"]), invocation("bootstrap-workspace", ["--check"])),
-            (cmd.match("python3", pattern=["-m", "pip"], mode="prefix"), invocation("python3", ["-m", "pip", "install", "."])),
+            (
+                cmd.match("bootstrap-workspace", pattern=["--check"]),
+                invocation("bootstrap-workspace", ["--check"]),
+            ),
+            (
+                cmd.match("python3", pattern=["-m", "pip"], mode="prefix"),
+                invocation("python3", ["-m", "pip", "install", "."]),
+            ),
         ]
         for matcher, observed in examples:
             with self.subTest(label=matcher.label):
                 self.assertTrue(matcher.matches(observed))
 
-        self.assertFalse(cmd.match("tea", pattern=["issue", "create"]).matches(invocation("xargs", ["tea", "issue", "create"])))
-        self.assertFalse(cmd.match("pip", pattern=["install"]).matches(invocation("python3", ["-m", "pip", "install", "."])))
+        self.assertFalse(
+            cmd.match("tea", pattern=["issue", "create"]).matches(invocation("xargs", ["tea", "issue", "create"]))
+        )
+        self.assertFalse(
+            cmd.match("pip", pattern=["install"]).matches(invocation("python3", ["-m", "pip", "install", "."]))
+        )
 
     def test_mapping_and_object_invocations_are_supported(self):
         class ObservedCommand:
@@ -85,13 +114,14 @@ class CommandMatcherTests(unittest.TestCase):
         self.assertTrue(cmd.match("gh", pattern=["issue", "list"]).matches(ObservedCommand()))
         self.assertTrue(cmd.match("tea", pattern=["issues"]).matches({"source": "tea", "argv": ["issues", "list"]}))
 
-
     def test_spy_specs_default_source_and_create_source_aligned_matchers(self):
         tea_spy = cmd.spy("tea")
 
         self.assertEqual(tea_spy.executable, "tea")
         self.assertEqual(tea_spy.source, "tea")
-        self.assertTrue(tea_spy.match(pattern=["issues", "create"]).matches({"source": "tea", "argv": ["issues", "create"]}))
+        self.assertTrue(
+            tea_spy.match(pattern=["issues", "create"]).matches({"source": "tea", "argv": ["issues", "create"]})
+        )
 
         custom_source = cmd.spy("gh", source="github-cli")
         matcher = custom_source.match(pattern=["issue", "list"])

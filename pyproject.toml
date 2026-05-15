@@ -19,3 +19,8 @@ doki = "dokimasia.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"

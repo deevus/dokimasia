@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from dokimasia.audit.assertions import AuditAssertionError, assert_audit, load_audit_events
+from dokimasia.audit.assertions import (
+    AuditAssertionError,
+    assert_audit,
+    load_audit_events,
+)
 from dokimasia.core.model import AuditEvent, RunContext, Scenario, ScenarioResult
 from dokimasia.core.template import render_template
 
@@ -40,7 +44,9 @@ class ScenarioRunner:
         for expected in scenario.expect_trace.get("events", []):
             if expected.get("kind") == "skill.loaded":
                 name = expected["name"]
-                if not any(event.kind == "skill.loaded" and _skill_name_matches(event.name, name) for event in trace_events):
+                if not any(
+                    event.kind == "skill.loaded" and _skill_name_matches(event.name, name) for event in trace_events
+                ):
                     return f"expected skill to load: {name}"
         return None
 
@@ -67,7 +73,14 @@ class ScenarioRunner:
         agent_result = self.agent_adapter.run(prompt, ctx.workspace, scenario_artifacts, run_env, timeout)
 
         if agent_result.timed_out:
-            return ScenarioResult(scenario.name, False, "agent_timeout", "agent timed out", agent_result.trace_events, [])
+            return ScenarioResult(
+                scenario.name,
+                False,
+                "agent_timeout",
+                "agent timed out",
+                agent_result.trace_events,
+                [],
+            )
         if agent_result.exit_code != 0:
             return ScenarioResult(
                 scenario.name,
@@ -115,4 +128,9 @@ class ScenarioRunner:
                 audit_events,
             )
 
-        return ScenarioResult(scenario.name, True, trace_events=agent_result.trace_events, audit_events=audit_events)
+        return ScenarioResult(
+            scenario.name,
+            True,
+            trace_events=agent_result.trace_events,
+            audit_events=audit_events,
+        )

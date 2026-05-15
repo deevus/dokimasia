@@ -25,8 +25,14 @@ class DokimasiaDocumentationTests(unittest.TestCase):
         text = README.read_text(encoding="utf-8")
 
         self.assertIn("generic suite assembly helpers", text)
-        self.assertIn("Projects provide provisioning, audit normalization, and state verification", text)
-        self.assertIn("Project-specific resource names, executable choices, audit roots, and state assertions stay in the project suite", text)
+        self.assertIn(
+            "Projects provide provisioning, audit normalization, and state verification",
+            text,
+        )
+        self.assertIn(
+            "Project-specific resource names, executable choices, audit roots, and state assertions stay in the project suite",
+            text,
+        )
 
 
 if __name__ == "__main__":

@@ -4,7 +4,13 @@ import unittest
 from pathlib import Path
 
 from dokimasia.audit.assertions import AuditAssertionError, assert_audit
-from dokimasia.core.model import AgentRunResult, AuditEvent, RunContext, Scenario, TraceEvent
+from dokimasia.core.model import (
+    AgentRunResult,
+    AuditEvent,
+    RunContext,
+    Scenario,
+    TraceEvent,
+)
 from dokimasia.core.runner import ScenarioRunner
 from dokimasia.core.template import render_template
 
@@ -12,7 +18,10 @@ from dokimasia.core.template import render_template
 class DokimasiaCoreTests(unittest.TestCase):
     def test_render_template_replaces_dotted_values(self):
         self.assertEqual(
-            render_template("{{ item.title }} / {{ run.id }}", {"item": {"title": "Hello"}, "run": {"id": "abc"}}),
+            render_template(
+                "{{ item.title }} / {{ run.id }}",
+                {"item": {"title": "Hello"}, "run": {"id": "abc"}},
+            ),
             "Hello / abc",
         )
 
@@ -76,8 +85,10 @@ class DokimasiaCoreTests(unittest.TestCase):
             )
             result = ScenarioRunner(FakeAdapter(), lambda raw: raw, verifier).run(scenario, ctx, {})
             self.assertTrue(result.passed, result.message)
-            self.assertEqual(seen_expectations, [{"match": {"title": "Run abc123", "labels": ["org"]}}])
-
+            self.assertEqual(
+                seen_expectations,
+                [{"match": {"title": "Run abc123", "labels": ["org"]}}],
+            )
 
     def test_runner_uses_configured_audit_log_env_var(self):
         captured_env = {}
@@ -90,20 +101,43 @@ class DokimasiaCoreTests(unittest.TestCase):
                 stdout.write_text("", encoding="utf-8")
                 stderr.write_text("", encoding="utf-8")
                 Path(env["PROJECT_AUDIT_LOG"]).write_text(
-                    json.dumps({"root": "cli.list", "argv": [], "cwd": str(workspace), "exit_code": 0, "mutates": False, "source": "cli"}) + "\n",
+                    json.dumps(
+                        {
+                            "root": "cli.list",
+                            "argv": [],
+                            "cwd": str(workspace),
+                            "exit_code": 0,
+                            "mutates": False,
+                            "source": "cli",
+                        }
+                    )
+                    + "\n",
                     encoding="utf-8",
                 )
                 return AgentRunResult(0, stdout, stderr, None, [], 0.01, False)
 
         def normalizer(raw):
-            return AuditEvent(raw["root"], raw["argv"], raw["cwd"], raw["exit_code"], raw["mutates"], raw["source"], raw)
+            return AuditEvent(
+                raw["root"],
+                raw["argv"],
+                raw["cwd"],
+                raw["exit_code"],
+                raw["mutates"],
+                raw["source"],
+                raw,
+            )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ctx = RunContext("abc123", "org", "repo", root / "workspace", root / "artifacts")
             ctx.workspace.mkdir()
             scenario = Scenario(name="audit env", prompt="Do it")
-            result = ScenarioRunner(FakeAdapter(), normalizer, lambda expectations, ctx: [], audit_log_env_var="PROJECT_AUDIT_LOG").run(scenario, ctx, {})
+            result = ScenarioRunner(
+                FakeAdapter(),
+                normalizer,
+                lambda expectations, ctx: [],
+                audit_log_env_var="PROJECT_AUDIT_LOG",
+            ).run(scenario, ctx, {})
             self.assertTrue(result.passed, result.message)
             self.assertIn("PROJECT_AUDIT_LOG", captured_env)
             self.assertNotIn("DOKIMASIA_AUDIT_LOG", captured_env)
@@ -132,7 +166,10 @@ class DokimasiaAgentAdapterTests(unittest.TestCase):
                 ),
             ]
         )
-        self.assertIn("plugin:create-record", [event.name for event in events if event.kind == "skill.loaded"])
+        self.assertIn(
+            "plugin:create-record",
+            [event.name for event in events if event.kind == "skill.loaded"],
+        )
 
     def test_pi_parser_extracts_skill_loaded_from_current_skill_read(self):
         from dokimasia.agents.pi import parse_pi_json_events
@@ -149,7 +186,10 @@ class DokimasiaAgentAdapterTests(unittest.TestCase):
             ],
             skills_dir=Path("/repo/skills"),
         )
-        self.assertEqual([event.name for event in events if event.kind == "skill.loaded"], ["create-record"])
+        self.assertEqual(
+            [event.name for event in events if event.kind == "skill.loaded"],
+            ["create-record"],
+        )
 
 
 class DokimasiaScenarioLoaderTests(unittest.TestCase):

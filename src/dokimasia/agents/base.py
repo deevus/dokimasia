@@ -14,5 +14,4 @@ class AgentAdapter(Protocol):
         artifact_dir: Path,
         env: dict[str, str],
         timeout_seconds: int,
-    ) -> AgentRunResult:
-        ...
+    ) -> AgentRunResult: ...

@@ -129,9 +129,7 @@ def assert_command_ran(
 
     commands = [normalize_invocation(command) for command in getattr(result, "commands", [])]
     matching_commands = [
-        command
-        for command in commands
-        if matcher.matches(command) and _exit_matches(command.exit_code, exit)
+        command for command in commands if matcher.matches(command) and _exit_matches(command.exit_code, exit)
     ]
     actual = len(matching_commands)
 

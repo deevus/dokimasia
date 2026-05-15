@@ -87,7 +87,9 @@ def test_max_zero_exit_any_asserts_command_did_not_run():
     assert_command_ran(result, TEA_ISSUE_CREATE, max=0, exit="any")
 
     with pytest.raises(AssertionError, match="expected count <= 0"):
-        assert_command_ran(result_with_commands(command("tea", ["issues", "create"], 1)), TEA_ISSUE_CREATE, max=0, exit="any")
+        assert_command_ran(
+            result_with_commands(command("tea", ["issues", "create"], 1)), TEA_ISSUE_CREATE, max=0, exit="any"
+        )
 
 
 def test_failure_message_includes_matcher_expectation_actual_and_observed_commands():
