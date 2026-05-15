@@ -50,6 +50,23 @@ scenario_dir = prepare_scenario_dir(run_root / "artifacts", "Create issue")
 
 `prepare_run_root` creates `<base>/<run-id>`. `prepare_scenario_dir` creates a safe hyphenated directory name such as `Create-issue`.
 
+
+## Suite safety helpers
+
+Use safety helpers before destructive cleanup of disposable resources. The caller supplies the suite policy so Dokimasia stays domain-neutral:
+
+```python
+from dokimasia.suite.safety import assert_scoped_disposable_name
+
+assert_scoped_disposable_name(
+    "suite-abc123",
+    required_prefix="suite-",
+    run_id="abc123",
+)
+```
+
+The helper raises `ValueError` when the name is missing the required prefix or run id, and the error includes the refused resource name.
+
 ## Suite command spy
 
 Use `create_spy` when a suite needs to put an audited wrapper earlier in `PATH` while forwarding to the real executable:
