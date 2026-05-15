@@ -34,6 +34,7 @@ class AgentRunResult:
     trace_events: list[TraceEvent]
     duration_seconds: float
     timed_out: bool = False
+    commands: list[Any] = field(default_factory=list)
 
 
 @dataclass

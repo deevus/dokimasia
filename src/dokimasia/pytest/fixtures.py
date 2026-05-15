@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -11,6 +11,7 @@ from slugify import slugify
 from dokimasia.agents.claude_code import ClaudeCodeAdapter
 from dokimasia.agents.pi import PiAdapter
 from dokimasia.core.model import AgentRunResult, TraceEvent
+from .cmd import CommandInvocation, normalize_invocation
 
 
 _BUILT_IN_AGENTS = {
@@ -58,6 +59,7 @@ class DokiResult:
     raw_trace_path: Path | None
     trace_events: list[TraceEvent]
     duration_seconds: float
+    commands: list[CommandInvocation] = field(default_factory=list)
 
     @classmethod
     def from_agent_result(cls, agent_result: AgentRunResult, artifact_dir: Path) -> "DokiResult":
@@ -70,6 +72,7 @@ class DokiResult:
             raw_trace_path=agent_result.raw_trace_path,
             trace_events=agent_result.trace_events,
             duration_seconds=agent_result.duration_seconds,
+            commands=[normalize_invocation(command) for command in getattr(agent_result, "commands", [])],
         )
 
     @property

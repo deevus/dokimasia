@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 MatcherMode = Literal["ordered", "contains", "span", "prefix", "exact"]
+ExitFilter = Literal["success", "failure", "any"]
 PatternInput = Sequence[str | Sequence[str]]
 PatternAlternativesInput = Sequence[PatternInput]
 TokenGroup = tuple[str, ...]
@@ -82,6 +83,41 @@ def match(
     )
 
 
+def assert_command_ran(
+    result: Any,
+    matcher: CommandMatcher,
+    *,
+    times: int | None = None,
+    min: int | None = None,
+    max: int | None = None,
+    exit: ExitFilter = "success",
+) -> None:
+    """Assert that result.commands includes invocations matching a command matcher."""
+
+    if times is not None and (min is not None or max is not None):
+        raise ValueError("times cannot be combined with min or max")
+    if exit not in {"success", "failure", "any"}:
+        raise ValueError("exit must be one of: success, failure, any")
+
+    commands = [normalize_invocation(command) for command in getattr(result, "commands", [])]
+    matching_commands = [
+        command
+        for command in commands
+        if matcher.matches(command) and _exit_matches(command.exit_code, exit)
+    ]
+    actual = len(matching_commands)
+
+    expected_lines = _expected_count_lines(times=times, min=min, max=max)
+    if not expected_lines:
+        expected_lines = ["expected count >= 1"]
+        if actual >= 1:
+            return
+    elif _count_satisfies(actual, times=times, min=min, max=max):
+        return
+
+    raise AssertionError(_command_assertion_message(matcher, expected_lines, actual, commands))
+
+
 def normalize_invocation(invocation: Any) -> CommandInvocation:
     if isinstance(invocation, CommandInvocation):
         return invocation
@@ -110,6 +146,74 @@ def normalize_invocation(invocation: Any) -> CommandInvocation:
         root=None if root is _MISSING else str(root),
         exit_code=None if exit_code is None else int(exit_code),
     )
+
+
+def _exit_matches(exit_code: int | None, exit_filter: ExitFilter) -> bool:
+    if exit_filter == "any":
+        return True
+    if exit_filter == "success":
+        return exit_code == 0
+    if exit_filter == "failure":
+        return exit_code is not None and exit_code != 0
+    raise ValueError(f"unsupported exit filter: {exit_filter}")
+
+
+def _expected_count_lines(
+    *,
+    times: int | None,
+    min: int | None,
+    max: int | None,
+) -> list[str]:
+    if times is not None:
+        return [f"expected count == {times}"]
+
+    lines: list[str] = []
+    if min is not None:
+        lines.append(f"expected count >= {min}")
+    if max is not None:
+        lines.append(f"expected count <= {max}")
+    return lines
+
+
+def _count_satisfies(
+    actual: int,
+    *,
+    times: int | None,
+    min: int | None,
+    max: int | None,
+) -> bool:
+    if times is not None:
+        return actual == times
+    if min is not None and actual < min:
+        return False
+    if max is not None and actual > max:
+        return False
+    return True
+
+
+def _command_assertion_message(
+    matcher: CommandMatcher,
+    expected_lines: list[str],
+    actual: int,
+    commands: Sequence[CommandInvocation],
+) -> str:
+    lines = [
+        f"command assertion failed for {matcher.label}",
+        *expected_lines,
+        f"actual count {actual}",
+        "observed commands:",
+    ]
+    if commands:
+        lines.extend(f"- {_format_command(command)}" for command in commands)
+    else:
+        lines.append("- <none>")
+    return "\n".join(lines)
+
+
+def _format_command(command: CommandInvocation) -> str:
+    argv = " ".join(command.argv)
+    command_text = command.executable if not argv else f"{command.executable} {argv}"
+    return f"{command_text} (exit_code={command.exit_code})"
 
 
 def _field(invocation: Any, name: str) -> Any:
@@ -218,6 +322,7 @@ def _tokens_match_groups(tokens: Sequence[str], pattern: CompiledPattern) -> boo
 __all__ = [
     "CommandInvocation",
     "CommandMatcher",
+    "assert_command_ran",
     "match",
     "normalize_invocation",
 ]

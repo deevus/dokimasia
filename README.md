@@ -51,6 +51,17 @@ assert ISSUE_CREATE.matches({"executable": "tea", "argv": ["--repo", "org/repo",
 
 `pattern=` accepts token groups; `patterns=` accepts explicit alternatives. Matching modes are `ordered` (default, gaps allowed), `contains` (unordered containment), `span` (contiguous span), `prefix`, and `exact`. Use `where=` for custom predicates and `label=` to override generated labels such as `tea.issues.create`.
 
+Use `assert_command_ran(result, matcher)` to assert against observed `result.commands` in pytest tests. By default it requires at least one successful matching command. Use keyword-only `times=`, `min=`, `max=`, and `exit="success" | "failure" | "any"` for count and exit-status constraints:
+
+```python
+from dokimasia.pytest import assert_command_ran, cmd
+
+ISSUE_CREATE = cmd.match("tea", pattern=[("issues", "issue"), "create"])
+
+assert_command_ran(result, ISSUE_CREATE)
+assert_command_ran(result, ISSUE_CREATE, times=1)
+assert_command_ran(result, ISSUE_CREATE, max=0, exit="any")  # did not run
+```
 
 
 ## Suite authoring helpers
