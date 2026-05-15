@@ -1,28 +1,48 @@
 # Dokimasia
 
-Dokimasia is a pytest-first generic agent end-to-end harness. It gives pytest suites fixtures for running a single agent turn, preserving artifacts, normalizing traces, and asserting project-specific evidence with normal pytest assertions.
+Dokimasia is a pytest-first acceptance testing harness for agent capabilities.
 
-The package is intentionally domain-neutral. It does not know about any specific product, CLI, issue tracker, or skill repository. Projects provide provisioning, audit normalization, state verification, and project-owned fixtures.
+Use it to prove that an agent can safely use an MCP server, CLI, skill, or workflow before you roll that capability out to developers or employees.
+
+A passing Dokimasia test gives you three kinds of evidence:
+
+1. **Capability evidence** — the agent discovered and used the intended capability, skill, MCP server, tool, or workflow.
+2. **Audited operation evidence** — the external operation happened through an approved or audited path.
+3. **Independent domain oracle** — the final business or system state was verified outside the agent's trace or claims.
+
+Dokimasia is not a model benchmark. It is CI-style acceptance testing for agent capabilities that mutate real systems.
 
 CLI name: `doki`.
 
-## Development setup
+## Why Dokimasia?
 
-```bash
-uv sync
-```
+Teams are giving agents access to MCP servers, internal CLIs, reusable skills, and workflow automations. Before broad rollout, they need evidence that agents use those capabilities correctly, safely, and observably.
 
-Run tests:
+A trace alone is not enough. A passing CLI or API integration test is not enough. A good final answer from the model is not enough. Dokimasia combines capability evidence, audited operations, and independent state verification in ordinary pytest suites.
 
-```bash
-uv run pytest
-```
+## What Dokimasia is not
 
-Run package commands inside the uv-managed environment:
+- Not a model benchmark for comparing model quality.
+- Not just an observability or trace viewer.
+- Not just a CLI/API integration test.
+- Not a generic eval harness trying to grade every agent behavior.
 
-```bash
-uv run python -c "import dokimasia; print(dokimasia.__name__)"
-```
+Dokimasia tests whether an agent can use a specific capability safely and produce the expected external state.
+
+## Good fit
+
+Use Dokimasia when you need to test whether an agent can:
+
+- use an internal MCP server before enabling it for employees;
+- use a coding-agent skill before rolling it out to developers;
+- create or modify records in systems such as GitHub, Jira, Linear, Slack, AWS, or ServiceNow;
+- follow approved CLIs, tools, or workflows instead of ad hoc shell or API paths.
+
+## Domain-neutral by design
+
+Dokimasia provides generic mechanics: agent turns, artifacts, traces, command spies, layout helpers, environment helpers, and cleanup safety checks.
+
+Your project provides provisioning, audit normalization, state verification, and domain-specific fixtures. This keeps the core independent of GitHub, Forgejo, Jira, Slack, or any other product while letting each suite encode its own business oracle.
 
 ## Python usage
 
@@ -47,7 +67,7 @@ def test_agent_creates_issue(doki_factory, prepared_repo):
     assert_command_ran(result, ISSUE_CREATE)
 ```
 
-Project suites provide provisioning, audit normalization, state verification, and fixtures for their own domain objects.
+Project suites provide provisioning, audit normalization, independent state verification, and fixtures for their own domain objects.
 
 ## Pytest command matchers
 
@@ -205,3 +225,21 @@ env = spy.env_with_path(os.environ)
 ```
 
 The wrapper records JSONL invocation events with `source`, `argv`, `cwd`, `pid`, `phase`, `exit_code`, and `timestamp`, then exits with the real executable's status.
+
+## Development setup
+
+```bash
+uv sync
+```
+
+Run tests:
+
+```bash
+uv run pytest
+```
+
+Run package commands inside the uv-managed environment:
+
+```bash
+uv run python -c "import dokimasia; print(dokimasia.__name__)"
+```
