@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -76,9 +77,22 @@ def parse_pi_json_events(lines: list[str], skills_dir: Path) -> list[TraceEvent]
 
 
 class PiAdapter:
-    def __init__(self, pi_bin: str = "pi", skills_dir: Path | None = None):
+    def __init__(
+        self,
+        pi_bin: str = "pi",
+        skills_dir: Path | None = None,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        thinking: str | None = None,
+        extra_args: Sequence[str] | None = None,
+    ):
         self.pi_bin = pi_bin
         self.skills_dir = skills_dir
+        self.provider = provider
+        self.model = model
+        self.thinking = thinking
+        self.extra_args = tuple(extra_args or ())
 
     def run(
         self,
@@ -103,8 +117,15 @@ class PiAdapter:
             "--no-skills",
             "--skill",
             str(self.skills_dir),
-            prompt,
         ]
+        if self.provider is not None:
+            command.extend(["--provider", self.provider])
+        if self.model is not None:
+            command.extend(["--model", self.model])
+        if self.thinking is not None:
+            command.extend(["--thinking", self.thinking])
+        command.extend(self.extra_args)
+        command.append(prompt)
 
         started = time.monotonic()
         merged_env = os.environ.copy()

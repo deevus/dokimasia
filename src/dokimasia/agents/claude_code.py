@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Iterable
 
@@ -64,9 +65,18 @@ def parse_claude_stream_json(lines: list[str]) -> list[TraceEvent]:
 
 
 class ClaudeCodeAdapter:
-    def __init__(self, claude_bin: str = "claude", plugin_dir: Path | None = None):
+    def __init__(
+        self,
+        claude_bin: str = "claude",
+        plugin_dir: Path | None = None,
+        *,
+        model: str | None = None,
+        extra_args: Sequence[str] | None = None,
+    ):
         self.claude_bin = claude_bin
         self.plugin_dir = plugin_dir
+        self.model = model
+        self.extra_args = tuple(extra_args or ())
 
     def run(
         self,
@@ -90,6 +100,9 @@ class ClaudeCodeAdapter:
         ]
         if self.plugin_dir is not None:
             command.extend(["--plugin-dir", str(self.plugin_dir)])
+        if self.model is not None:
+            command.extend(["--model", self.model])
+        command.extend(self.extra_args)
         command.append(prompt)
 
         started = time.monotonic()

@@ -108,6 +108,20 @@ def _write_python_tool(path: Path, *, exit_code: int = 0, shebang: str | None = 
     path.chmod(0o755)
 
 
+def _write_argv_recorder(path: Path, output_path: Path) -> None:
+    path.write_text(
+        f"#!{sys.executable}\n"
+        "from __future__ import annotations\n"
+        "import json\n"
+        "import sys\n"
+        f"output_path = {str(output_path)!r}\n"
+        "with open(output_path, 'w', encoding='utf-8') as handle:\n"
+        "    json.dump(sys.argv[1:], handle)\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
 def test_default_doki_fixture_is_available(doki):
     assert doki.run_id
     assert doki.workspace.exists()
@@ -500,6 +514,142 @@ def test_doki_factory_accepts_configured_builtin_adapter_instances(doki_factory,
     assert configured.agent is adapter
     assert configured.agent.pi_bin == "project-pi"
     assert configured.agent.skills_dir == skills_dir
+
+
+def test_pi_adapter_passes_configured_model_to_pi_cli(tmp_path):
+    pi_bin = tmp_path / "pi"
+    argv_path = tmp_path / "pi-argv.json"
+    _write_argv_recorder(pi_bin, argv_path)
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+
+    adapter = PiAdapter(
+        pi_bin=str(pi_bin),
+        skills_dir=skills_dir,
+        provider="anthropic",
+        model="claude-sonnet-4",
+        thinking="high",
+        extra_args=["--models", "claude-*"],
+    )
+
+    result = adapter.run(
+        "use the skill",
+        workspace=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        env={},
+        timeout_seconds=5,
+    )
+
+    assert result.exit_code == 0
+    argv = json.loads(argv_path.read_text(encoding="utf-8"))
+    assert argv == [
+        "--print",
+        "--mode",
+        "json",
+        "--no-session",
+        "--no-skills",
+        "--skill",
+        str(skills_dir),
+        "--provider",
+        "anthropic",
+        "--model",
+        "claude-sonnet-4",
+        "--thinking",
+        "high",
+        "--models",
+        "claude-*",
+        "use the skill",
+    ]
+
+
+def test_claude_code_adapter_passes_configured_model_to_claude_cli(tmp_path):
+    claude_bin = tmp_path / "claude"
+    argv_path = tmp_path / "claude-argv.json"
+    _write_argv_recorder(claude_bin, argv_path)
+
+    adapter = ClaudeCodeAdapter(claude_bin=str(claude_bin), model="sonnet", extra_args=["--allowedTools", "Read"])
+
+    result = adapter.run(
+        "use the skill",
+        workspace=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        env={},
+        timeout_seconds=5,
+    )
+
+    assert result.exit_code == 0
+    argv = json.loads(argv_path.read_text(encoding="utf-8"))
+    assert argv == [
+        "--print",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+        "bypassPermissions",
+        "--model",
+        "sonnet",
+        "--allowedTools",
+        "Read",
+        "use the skill",
+    ]
+
+
+def test_doki_factory_passes_model_to_named_builtin_agent(doki_factory, tmp_path):
+    pi = doki_factory(
+        agent="pi",
+        provider="anthropic",
+        model="claude-sonnet-4",
+        thinking="high",
+        extra_args=["--models", "claude-*"],
+        workspace=tmp_path / "workspace-pi",
+        artifact_dir=tmp_path / "artifacts-pi",
+    )
+    claude = doki_factory(
+        agent="claude-code",
+        model="sonnet",
+        extra_args=["--allowedTools", "Read"],
+        workspace=tmp_path / "workspace-claude",
+        artifact_dir=tmp_path / "artifacts-claude",
+    )
+
+    assert pi.agent.provider == "anthropic"
+    assert pi.agent.model == "claude-sonnet-4"
+    assert pi.agent.thinking == "high"
+    assert pi.agent.extra_args == ("--models", "claude-*")
+    assert claude.agent.model == "sonnet"
+    assert claude.agent.extra_args == ("--allowedTools", "Read")
+
+
+def test_doki_factory_rejects_pi_only_options_for_claude_code(doki_factory, tmp_path):
+    try:
+        doki_factory(
+            agent="claude-code",
+            provider="anthropic",
+            thinking="high",
+            workspace=tmp_path / "workspace",
+            artifact_dir=tmp_path / "artifacts",
+        )
+    except ValueError as exc:
+        assert "provider and thinking are only supported for pi agents" in str(exc)
+    else:
+        raise AssertionError("expected pi-only provider options with claude-code to fail")
+
+
+def test_doki_factory_rejects_model_without_named_builtin_agent(doki_factory, tmp_path):
+    try:
+        doki_factory(
+            agent=FakeAdapter(),
+            provider="anthropic",
+            model="sonnet",
+            thinking="high",
+            extra_args=["--verbose"],
+            workspace=tmp_path / "workspace",
+            artifact_dir=tmp_path / "artifacts",
+        )
+    except ValueError as exc:
+        assert "provider, model, thinking, and extra_args can only be used with named built-in agents" in str(exc)
+    else:
+        raise AssertionError("expected provider options with custom adapter to fail")
 
 
 def test_doki_factory_rejects_unknown_agent_names(doki_factory, tmp_path):

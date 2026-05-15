@@ -69,6 +69,20 @@ def test_agent_creates_issue(doki_factory, prepared_repo):
 
 Project suites provide provisioning, audit normalization, independent state verification, and fixtures for their own domain objects.
 
+Configure built-in agent CLI options at `doki_factory` creation time. `model` and `extra_args` work with `pi` and `claude-code`; `provider` and `thinking` are Pi-only options:
+
+```python
+doki = doki_factory(
+    agent="pi",
+    provider="anthropic",
+    model="claude-sonnet-4",
+    thinking="high",
+    extra_args=["--models", "claude-*"],
+)
+```
+
+For custom adapters, instantiate and configure the adapter directly, then pass it as `agent=`.
+
 ## Pytest command matchers
 
 Use `dokimasia.pytest.cmd` to define static matchers for observed top-level executable invocations. Matchers are safe to create at module import time:

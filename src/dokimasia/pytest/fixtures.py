@@ -41,10 +41,22 @@ def _load_command_log(path: Path) -> list[CommandInvocation]:
     return commands
 
 
-def _resolve_agent(agent: Any | None) -> Any:
+def _resolve_agent(
+    agent: Any | None,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    thinking: str | None = None,
+    extra_args: Sequence[str] = (),
+) -> Any:
+    has_provider_options = any([provider is not None, model is not None, thinking is not None, bool(extra_args)])
     if agent is None:
+        if has_provider_options:
+            raise ValueError("provider, model, thinking, and extra_args can only be used with named built-in agents")
         return UnconfiguredAgentAdapter()
     if not isinstance(agent, str):
+        if has_provider_options:
+            raise ValueError("provider, model, thinking, and extra_args can only be used with named built-in agents")
         return agent
 
     agent_name = agent.strip().lower()
@@ -53,7 +65,13 @@ def _resolve_agent(agent: Any | None) -> Any:
     except KeyError as exc:
         supported = ", ".join(sorted(_BUILT_IN_AGENTS))
         raise ValueError(f"unsupported agent {agent!r}; supported agents: {supported}") from exc
-    return adapter_type()
+
+    if adapter_type is ClaudeCodeAdapter:
+        if provider is not None or thinking is not None:
+            raise ValueError("provider and thinking are only supported for pi agents")
+        return adapter_type(model=model, extra_args=extra_args)
+
+    return adapter_type(provider=provider, model=model, thinking=thinking, extra_args=extra_args)
 
 
 class UnconfiguredAgentAdapter:
@@ -269,6 +287,10 @@ def doki_factory(request: _pytest.FixtureRequest, tmp_path: Path):
         run_id: str | None = None,
         timeout_seconds: int = 300,
         spies: Sequence[CommandSpySpec] = (),
+        provider: str | None = None,
+        model: str | None = None,
+        thinking: str | None = None,
+        extra_args: Sequence[str] = (),
     ) -> Doki:
         workspace_path = Path(workspace) if workspace is not None else tmp_path / "workspace"
         artifact_root = (
@@ -285,7 +307,7 @@ def doki_factory(request: _pytest.FixtureRequest, tmp_path: Path):
             env=base_env,
         )
         return Doki(
-            agent=_resolve_agent(agent),
+            agent=_resolve_agent(agent, provider=provider, model=model, thinking=thinking, extra_args=extra_args),
             workspace=workspace_path,
             artifact_root=artifact_root,
             run_id=run_id or _default_run_id(request.node.nodeid),
