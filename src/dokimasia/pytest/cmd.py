@@ -55,6 +55,34 @@ class CommandMatcher:
         return [normalize_invocation(invocation) for invocation in invocations if self.matches(invocation)]
 
 
+@dataclass(frozen=True)
+class CommandSpySpec:
+    """Static pytest command spy declaration materialized by doki_factory."""
+
+    executable: str
+    source: str
+
+    def match(
+        self,
+        *,
+        pattern: PatternInput | None = None,
+        patterns: PatternAlternativesInput | None = None,
+        mode: MatcherMode = "ordered",
+        where: WherePredicate | None = None,
+        label: str | None = None,
+    ) -> CommandMatcher:
+        """Create a matcher aligned with the source emitted by this spy."""
+
+        return match(
+            self.source,
+            pattern=pattern,
+            patterns=patterns,
+            mode=mode,
+            where=where,
+            label=label,
+        )
+
+
 def match(
     executable: str,
     *,
@@ -116,6 +144,17 @@ def assert_command_ran(
         return
 
     raise AssertionError(_command_assertion_message(matcher, expected_lines, actual, commands))
+
+
+def spy(executable: str, *, source: str | None = None) -> CommandSpySpec:
+    """Create a static command spy declaration for pytest doki_factory."""
+
+    if not executable:
+        raise ValueError("executable is required")
+    resolved_source = executable if source is None else source
+    if not resolved_source:
+        raise ValueError("source must not be empty")
+    return CommandSpySpec(executable=executable, source=resolved_source)
 
 
 def normalize_invocation(invocation: Any) -> CommandInvocation:
@@ -322,7 +361,9 @@ def _tokens_match_groups(tokens: Sequence[str], pattern: CompiledPattern) -> boo
 __all__ = [
     "CommandInvocation",
     "CommandMatcher",
+    "CommandSpySpec",
     "assert_command_ran",
     "match",
     "normalize_invocation",
+    "spy",
 ]

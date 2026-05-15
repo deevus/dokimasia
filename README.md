@@ -63,6 +63,20 @@ assert_command_ran(result, ISSUE_CREATE, times=1)
 assert_command_ran(result, ISSUE_CREATE, max=0, exit="any")  # did not run
 ```
 
+Static spy specs declare wrappers for pytest suites that need audited host commands:
+
+```python
+from dokimasia.pytest import cmd
+
+TEA = cmd.spy("tea")
+ISSUE_CREATE = TEA.match(pattern=[("issues", "issue", "i"), ("create", "c")])
+
+def test_issue_flow(doki_factory):
+    doki = doki_factory(spies=[TEA])
+```
+
+`doki_factory(spies=[...])` resolves the real executable before adding wrapper directories to `PATH`, materializes wrappers under the fixture artifact area, and only prepends the spy `bin` directory when spies are explicitly registered. `cmd.spy("name")` records audit events with `source="name"` by default; pass `source=` when the audit source should differ from the executable name.
+
 
 ## Suite authoring helpers
 

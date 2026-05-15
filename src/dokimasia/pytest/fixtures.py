@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -11,7 +13,9 @@ from slugify import slugify
 from dokimasia.agents.claude_code import ClaudeCodeAdapter
 from dokimasia.agents.pi import PiAdapter
 from dokimasia.core.model import AgentRunResult, TraceEvent
-from .cmd import CommandInvocation, normalize_invocation
+from .cmd import CommandInvocation, CommandSpySpec, normalize_invocation
+from dokimasia.suite.env import env_with_path_prepend, require_executable
+from dokimasia.suite.spy import CommandSpy, create_spy
 
 
 _BUILT_IN_AGENTS = {
@@ -125,6 +129,7 @@ class Doki:
         run_id: str,
         env: dict[str, str] | None = None,
         timeout_seconds: int = 300,
+        command_spies: Sequence[CommandSpy] = (),
     ):
         self.agent = agent
         self.workspace = workspace
@@ -132,6 +137,7 @@ class Doki:
         self.run_id = run_id
         self.env = dict(env or {})
         self.timeout_seconds = timeout_seconds
+        self.command_spies = tuple(command_spies)
         self._run_count = 0
 
     def write_file(self, relative_path: str | Path, content: str) -> Path:
@@ -190,6 +196,39 @@ def _default_run_id(nodeid: str) -> str:
     return f"{_node_slug(nodeid)}-{uuid4().hex[:8]}"
 
 
+def _materialize_command_spies(
+    *,
+    specs: Sequence[CommandSpySpec],
+    artifact_root: Path,
+    env: dict[str, str],
+) -> tuple[dict[str, str], tuple[CommandSpy, ...]]:
+    if not specs:
+        return env, ()
+
+    seen_executables: set[str] = set()
+    for spec in specs:
+        if spec.executable in seen_executables:
+            raise ValueError(f"duplicate spy executable: {spec.executable}")
+        seen_executables.add(spec.executable)
+
+    search_path = env.get("PATH")
+    resolved = [(spec, require_executable(spec.executable, search_path=search_path)) for spec in specs]
+    spy_root = artifact_root / "spies" / uuid4().hex[:8]
+    audit_log = spy_root / "audit.jsonl"
+    command_spies = tuple(
+        create_spy(
+            root=spy_root,
+            executable_name=spec.executable,
+            real_executable=real_executable,
+            audit_log=audit_log,
+            source=spec.source,
+        )
+        for spec, real_executable in resolved
+    )
+    path_env = env if "PATH" in env else (env | {"PATH": os.environ.get("PATH", "")})
+    return env_with_path_prepend(spy_root / "bin", path_env), command_spies
+
+
 @_pytest.fixture
 def doki_factory(request: _pytest.FixtureRequest, tmp_path: Path):
     def factory(
@@ -200,6 +239,7 @@ def doki_factory(request: _pytest.FixtureRequest, tmp_path: Path):
         env: dict[str, str] | None = None,
         run_id: str | None = None,
         timeout_seconds: int = 300,
+        spies: Sequence[CommandSpySpec] = (),
     ) -> Doki:
         workspace_path = Path(workspace) if workspace is not None else tmp_path / "workspace"
         artifact_root = (
@@ -209,13 +249,20 @@ def doki_factory(request: _pytest.FixtureRequest, tmp_path: Path):
         )
         workspace_path.mkdir(parents=True, exist_ok=True)
         artifact_root.mkdir(parents=True, exist_ok=True)
+        base_env = dict(env or {})
+        run_env, command_spies = _materialize_command_spies(
+            specs=spies,
+            artifact_root=artifact_root,
+            env=base_env,
+        )
         return Doki(
             agent=_resolve_agent(agent),
             workspace=workspace_path,
             artifact_root=artifact_root,
             run_id=run_id or _default_run_id(request.node.nodeid),
-            env=env,
+            env=run_env,
             timeout_seconds=timeout_seconds,
+            command_spies=command_spies,
         )
 
     return factory

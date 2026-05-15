@@ -86,5 +86,21 @@ class CommandMatcherTests(unittest.TestCase):
         self.assertTrue(cmd.match("tea", pattern=["issues"]).matches({"source": "tea", "argv": ["issues", "list"]}))
 
 
+    def test_spy_specs_default_source_and_create_source_aligned_matchers(self):
+        tea_spy = cmd.spy("tea")
+
+        self.assertEqual(tea_spy.executable, "tea")
+        self.assertEqual(tea_spy.source, "tea")
+        self.assertTrue(tea_spy.match(pattern=["issues", "create"]).matches({"source": "tea", "argv": ["issues", "create"]}))
+
+        custom_source = cmd.spy("gh", source="github-cli")
+        matcher = custom_source.match(pattern=["issue", "list"])
+
+        self.assertEqual(custom_source.executable, "gh")
+        self.assertEqual(custom_source.source, "github-cli")
+        self.assertTrue(matcher.matches({"source": "github-cli", "argv": ["issue", "list"]}))
+        self.assertFalse(matcher.matches(invocation("gh", ["issue", "list"])))
+
+
 if __name__ == "__main__":
     unittest.main()
