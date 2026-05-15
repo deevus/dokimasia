@@ -536,7 +536,12 @@ def test_pi_adapter_passes_configured_model_to_pi_cli(tmp_path):
         "use the skill",
         workspace=tmp_path,
         artifact_dir=tmp_path / "artifacts",
-        env={},
+        env={
+            "DOKIMASIA_PROVIDER": "deepseek",
+            "DOKIMASIA_MODEL": "deepseek/deepseek-v4-flash",
+            "DOKIMASIA_THINKING": "low",
+            "DOKIMASIA_EXTRA_ARGS": "--ignored true",
+        },
         timeout_seconds=5,
     )
 
@@ -558,6 +563,51 @@ def test_pi_adapter_passes_configured_model_to_pi_cli(tmp_path):
         "high",
         "--models",
         "claude-*",
+        "use the skill",
+    ]
+
+
+def test_pi_adapter_uses_dokimasia_provider_env_vars(tmp_path, monkeypatch):
+    pi_bin = tmp_path / "pi"
+    argv_path = tmp_path / "pi-argv.json"
+    _write_argv_recorder(pi_bin, argv_path)
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    monkeypatch.setenv("DOKIMASIA_PROVIDER", "deepseek")
+    monkeypatch.setenv("DOKIMASIA_MODEL", "deepseek/deepseek-v3")
+
+    adapter = PiAdapter(pi_bin=str(pi_bin), skills_dir=skills_dir)
+
+    result = adapter.run(
+        "use the skill",
+        workspace=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        env={
+            "DOKIMASIA_MODEL": "deepseek/deepseek-v4-flash",
+            "DOKIMASIA_THINKING": "high",
+            "DOKIMASIA_EXTRA_ARGS": '--models "deepseek/*"',
+        },
+        timeout_seconds=5,
+    )
+
+    assert result.exit_code == 0
+    argv = json.loads(argv_path.read_text(encoding="utf-8"))
+    assert argv == [
+        "--print",
+        "--mode",
+        "json",
+        "--no-session",
+        "--no-skills",
+        "--skill",
+        str(skills_dir),
+        "--provider",
+        "deepseek",
+        "--model",
+        "deepseek/deepseek-v4-flash",
+        "--thinking",
+        "high",
+        "--models",
+        "deepseek/*",
         "use the skill",
     ]
 
@@ -592,6 +642,59 @@ def test_claude_code_adapter_passes_configured_model_to_claude_cli(tmp_path):
         "Read",
         "use the skill",
     ]
+
+
+def test_claude_code_adapter_uses_dokimasia_model_env_vars(tmp_path, monkeypatch):
+    claude_bin = tmp_path / "claude"
+    argv_path = tmp_path / "claude-argv.json"
+    _write_argv_recorder(claude_bin, argv_path)
+    monkeypatch.setenv("DOKIMASIA_MODEL", "sonnet")
+
+    adapter = ClaudeCodeAdapter(claude_bin=str(claude_bin))
+
+    result = adapter.run(
+        "use the skill",
+        workspace=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        env={"DOKIMASIA_EXTRA_ARGS": '--allowedTools "Read Write"'},
+        timeout_seconds=5,
+    )
+
+    assert result.exit_code == 0
+    argv = json.loads(argv_path.read_text(encoding="utf-8"))
+    assert argv == [
+        "--print",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+        "bypassPermissions",
+        "--model",
+        "sonnet",
+        "--allowedTools",
+        "Read Write",
+        "use the skill",
+    ]
+
+
+def test_claude_code_adapter_rejects_pi_only_env_vars(tmp_path):
+    claude_bin = tmp_path / "claude"
+    argv_path = tmp_path / "claude-argv.json"
+    _write_argv_recorder(claude_bin, argv_path)
+    adapter = ClaudeCodeAdapter(claude_bin=str(claude_bin))
+
+    try:
+        adapter.run(
+            "use the skill",
+            workspace=tmp_path,
+            artifact_dir=tmp_path / "artifacts",
+            env={"DOKIMASIA_PROVIDER": "anthropic"},
+            timeout_seconds=5,
+        )
+    except ValueError as exc:
+        assert "DOKIMASIA_PROVIDER and DOKIMASIA_THINKING are only supported for pi agents" in str(exc)
+    else:
+        raise AssertionError("expected claude-code to reject pi-only environment variables")
 
 
 def test_doki_factory_passes_model_to_named_builtin_agent(doki_factory, tmp_path):

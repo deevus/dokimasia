@@ -8,6 +8,14 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from dokimasia.agents.base import (
+    DOKIMASIA_EXTRA_ARGS_ENV_VAR,
+    DOKIMASIA_MODEL_ENV_VAR,
+    DOKIMASIA_PROVIDER_ENV_VAR,
+    DOKIMASIA_THINKING_ENV_VAR,
+    resolve_extra_args,
+    resolve_option,
+)
 from dokimasia.core.model import AgentRunResult, TraceEvent
 
 
@@ -93,6 +101,7 @@ class PiAdapter:
         self.model = model
         self.thinking = thinking
         self.extra_args = tuple(extra_args or ())
+        self._extra_args = extra_args
 
     def run(
         self,
@@ -108,6 +117,8 @@ class PiAdapter:
         artifact_dir.mkdir(parents=True, exist_ok=True)
         stdout_path = artifact_dir / "agent.stdout.jsonl"
         stderr_path = artifact_dir / "agent.stderr.txt"
+        merged_env = os.environ.copy()
+        merged_env.update(env)
         command = [
             self.pi_bin,
             "--print",
@@ -118,18 +129,20 @@ class PiAdapter:
             "--skill",
             str(self.skills_dir),
         ]
-        if self.provider is not None:
-            command.extend(["--provider", self.provider])
-        if self.model is not None:
-            command.extend(["--model", self.model])
-        if self.thinking is not None:
-            command.extend(["--thinking", self.thinking])
-        command.extend(self.extra_args)
+        provider = resolve_option(self.provider, merged_env, DOKIMASIA_PROVIDER_ENV_VAR)
+        model = resolve_option(self.model, merged_env, DOKIMASIA_MODEL_ENV_VAR)
+        thinking = resolve_option(self.thinking, merged_env, DOKIMASIA_THINKING_ENV_VAR)
+        extra_args = resolve_extra_args(self._extra_args, merged_env, DOKIMASIA_EXTRA_ARGS_ENV_VAR)
+        if provider is not None:
+            command.extend(["--provider", provider])
+        if model is not None:
+            command.extend(["--model", model])
+        if thinking is not None:
+            command.extend(["--thinking", thinking])
+        command.extend(extra_args)
         command.append(prompt)
 
         started = time.monotonic()
-        merged_env = os.environ.copy()
-        merged_env.update(env)
         try:
             completed = subprocess.run(
                 command,

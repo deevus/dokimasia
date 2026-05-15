@@ -9,6 +9,14 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Iterable
 
+from dokimasia.agents.base import (
+    DOKIMASIA_EXTRA_ARGS_ENV_VAR,
+    DOKIMASIA_MODEL_ENV_VAR,
+    DOKIMASIA_PROVIDER_ENV_VAR,
+    DOKIMASIA_THINKING_ENV_VAR,
+    resolve_extra_args,
+    resolve_option,
+)
 from dokimasia.core.model import AgentRunResult, TraceEvent
 
 _SKILL_TEXT = re.compile(r"\bUsing\s+([A-Za-z0-9_-]+)\b")
@@ -77,6 +85,7 @@ class ClaudeCodeAdapter:
         self.plugin_dir = plugin_dir
         self.model = model
         self.extra_args = tuple(extra_args or ())
+        self._extra_args = extra_args
 
     def run(
         self,
@@ -89,6 +98,11 @@ class ClaudeCodeAdapter:
         artifact_dir.mkdir(parents=True, exist_ok=True)
         stdout_path = artifact_dir / "agent.stdout.jsonl"
         stderr_path = artifact_dir / "agent.stderr.txt"
+        merged_env = os.environ.copy()
+        merged_env.update(env)
+        if DOKIMASIA_PROVIDER_ENV_VAR in merged_env or DOKIMASIA_THINKING_ENV_VAR in merged_env:
+            raise ValueError("DOKIMASIA_PROVIDER and DOKIMASIA_THINKING are only supported for pi agents")
+
         command = [
             self.claude_bin,
             "--print",
@@ -100,14 +114,14 @@ class ClaudeCodeAdapter:
         ]
         if self.plugin_dir is not None:
             command.extend(["--plugin-dir", str(self.plugin_dir)])
-        if self.model is not None:
-            command.extend(["--model", self.model])
-        command.extend(self.extra_args)
+        model = resolve_option(self.model, merged_env, DOKIMASIA_MODEL_ENV_VAR)
+        extra_args = resolve_extra_args(self._extra_args, merged_env, DOKIMASIA_EXTRA_ARGS_ENV_VAR)
+        if model is not None:
+            command.extend(["--model", model])
+        command.extend(extra_args)
         command.append(prompt)
 
         started = time.monotonic()
-        merged_env = os.environ.copy()
-        merged_env.update(env)
         try:
             completed = subprocess.run(
                 command,

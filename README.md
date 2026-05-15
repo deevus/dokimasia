@@ -81,6 +81,14 @@ doki = doki_factory(
 )
 ```
 
+The same options can be set with environment variables. `doki_factory(env={...})` overrides the pytest process environment, and explicit `doki_factory` or adapter arguments override both:
+
+```bash
+DOKIMASIA_MODEL=deepseek/deepseek-v4-flash uv run pytest
+```
+
+Supported variables are `DOKIMASIA_PROVIDER`, `DOKIMASIA_MODEL`, `DOKIMASIA_THINKING`, and `DOKIMASIA_EXTRA_ARGS`. `DOKIMASIA_EXTRA_ARGS` is shell-split, so quoted values are preserved.
+
 For custom adapters, instantiate and configure the adapter directly, then pass it as `agent=`.
 
 ## Pytest command matchers
