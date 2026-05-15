@@ -34,6 +34,50 @@ from dokimasia.agents.claude_code import ClaudeCodeAdapter
 
 Project suites provide provisioning, audit normalization, and state verification.
 
+
+## Suite authoring helpers
+
+The `dokimasia.suite` namespace contains generic suite assembly helpers. These helpers cover common mechanics that many end-to-end suites need while staying independent of any product, service, CLI, issue tracker, or project workflow.
+
+Available helper modules:
+
+- `dokimasia.suite.layout` creates run ids and artifact directories.
+- `dokimasia.suite.spy` creates audited command wrappers that can be prepended to `PATH`.
+- `dokimasia.suite.safety` checks caller-supplied cleanup policies before deleting disposable resources.
+- `dokimasia.suite.env` composes `PATH` values and discovers required host executables.
+
+Projects provide provisioning, audit normalization, and state verification. Project-specific resource names, executable choices, audit roots, and state assertions stay in the project suite. Dokimasia only provides the generic helper boundary that suite authors compose around those project-specific functions.
+
+A typical suite composes the helpers in this order:
+
+```python
+from pathlib import Path
+
+from dokimasia.suite.env import env_with_path_prepend, require_executable
+from dokimasia.suite.layout import create_run_id, prepare_run_root, prepare_scenario_dir
+from dokimasia.suite.safety import assert_scoped_disposable_name
+from dokimasia.suite.spy import create_spy
+
+run_id = create_run_id()
+run_root = prepare_run_root(Path(".e2e-artifacts"), run_id)
+scenario_dir = prepare_scenario_dir(run_root / "artifacts", "Create record")
+
+resource_name = f"suite-{run_id}"
+assert_scoped_disposable_name(resource_name, required_prefix="suite-", run_id=run_id)
+
+real_cli = require_executable("example-cli")
+spy = create_spy(
+    root=run_root / "spy",
+    executable_name="example-cli",
+    real_executable=real_cli,
+    audit_log=scenario_dir / "audit.jsonl",
+    source="example-cli",
+)
+env = env_with_path_prepend(spy.path_prefix)
+```
+
+The example uses placeholder names only. Real suites should keep domain-specific provisioning, command normalization, and state assertions outside Dokimasia.
+
 ## Suite layout helpers
 
 Use layout helpers for domain-neutral run ids and artifact directories:
@@ -45,10 +89,10 @@ from dokimasia.suite.layout import create_run_id, prepare_run_root, prepare_scen
 
 run_id = create_run_id()
 run_root = prepare_run_root(Path(".e2e-artifacts"), run_id)
-scenario_dir = prepare_scenario_dir(run_root / "artifacts", "Create issue")
+scenario_dir = prepare_scenario_dir(run_root / "artifacts", "Create record")
 ```
 
-`prepare_run_root` creates `<base>/<run-id>`. `prepare_scenario_dir` creates a safe hyphenated directory name such as `Create-issue`.
+`prepare_run_root` creates `<base>/<run-id>`. `prepare_scenario_dir` creates a safe hyphenated directory name such as `Create-record`.
 
 
 ## Suite safety helpers
