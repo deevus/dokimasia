@@ -89,6 +89,48 @@ def test_doki_factory_runs_agent_and_returns_artifacted_result(doki_factory, tmp
 
 
 
+def test_result_has_skill_loaded_matches_loaded_skill_names(doki_factory, tmp_path):
+    result = doki_factory(
+        agent=FakeAdapter(),
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    ).run("load create issue skill")
+
+    assert result.has_skill_loaded("plugin:create-issue") is True
+
+
+def test_result_has_skill_loaded_is_false_when_skill_is_absent(doki_factory, tmp_path):
+    result = doki_factory(
+        agent=FakeAdapter(),
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    ).run("load create issue skill")
+
+    assert result.has_skill_loaded("close-issue") is False
+
+
+def test_result_has_skill_loaded_defaults_to_suffix_tolerant_matching(doki_factory, tmp_path):
+    result = doki_factory(
+        agent=FakeAdapter(),
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    ).run("load create issue skill")
+
+    assert result.has_skill_loaded("create-issue") is True
+
+
+def test_result_has_skill_loaded_exact_requires_full_skill_name(doki_factory, tmp_path):
+    result = doki_factory(
+        agent=FakeAdapter(),
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    ).run("load create issue skill")
+
+    assert result.has_skill_loaded("create-issue", exact=True) is False
+    assert result.has_skill_loaded("plugin:create-issue", exact=True) is True
+
+
+
 def test_doki_factory_preserves_explicit_falsy_adapter(doki_factory, tmp_path):
     agent = FalsyFakeAdapter()
 
