@@ -34,6 +34,24 @@ from dokimasia.agents.claude_code import ClaudeCodeAdapter
 
 Project suites provide provisioning, audit normalization, and state verification.
 
+## Pytest command matchers
+
+Use `dokimasia.pytest.cmd` to define static matchers for observed top-level executable invocations. Matchers are safe to create at module import time:
+
+```python
+from dokimasia.pytest import cmd
+
+ISSUE_CREATE = cmd.match(
+    "tea",
+    pattern=[("issues", "issue", "i"), ("create", "c")],
+)
+
+assert ISSUE_CREATE.matches({"executable": "tea", "argv": ["--repo", "org/repo", "issue", "create"]})
+```
+
+`pattern=` accepts token groups; `patterns=` accepts explicit alternatives. Matching modes are `ordered` (default, gaps allowed), `contains` (unordered containment), `span` (contiguous span), `prefix`, and `exact`. Use `where=` for custom predicates and `label=` to override generated labels such as `tea.issues.create`.
+
+
 
 ## Suite authoring helpers
 
