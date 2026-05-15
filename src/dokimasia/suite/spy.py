@@ -8,6 +8,8 @@ import os
 import stat
 import sys
 
+from dokimasia.suite.env import env_with_path_prepend
+
 
 @dataclass(frozen=True)
 class CommandSpy:
@@ -23,10 +25,7 @@ class CommandSpy:
         return str(self.bin_dir)
 
     def env_with_path(self, base_env: Mapping[str, str] | None = None) -> dict[str, str]:
-        env = dict(os.environ if base_env is None else base_env)
-        existing_path = env.get("PATH", "")
-        env["PATH"] = self.path_prefix if not existing_path else f"{self.path_prefix}{os.pathsep}{existing_path}"
-        return env
+        return env_with_path_prepend(self.path_prefix, base_env)
 
 
 def _validate_executable_name(executable_name: str) -> None:

@@ -67,6 +67,20 @@ assert_scoped_disposable_name(
 
 The helper raises `ValueError` when the name is missing the required prefix or run id, and the error includes the refused resource name.
 
+
+## Suite environment helpers
+
+Use environment helpers when a suite needs to compose PATH values or require a host executable:
+
+```python
+from dokimasia.suite.env import env_with_path_prepend, require_executable
+
+real_cli = require_executable("example-cli")
+env = env_with_path_prepend(".e2e-artifacts/run/spy/bin", {"PATH": "/usr/bin"})
+```
+
+`env_with_path_prepend` preserves existing `PATH` content and handles empty or absent values. `require_executable` raises `FileNotFoundError` with the missing executable name when lookup fails.
+
 ## Suite command spy
 
 Use `create_spy` when a suite needs to put an audited wrapper earlier in `PATH` while forwarding to the real executable:
