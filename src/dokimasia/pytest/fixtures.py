@@ -8,7 +8,32 @@ from uuid import uuid4
 import pytest as _pytest
 from slugify import slugify
 
+from dokimasia.agents.claude_code import ClaudeCodeAdapter
+from dokimasia.agents.pi import PiAdapter
 from dokimasia.core.model import AgentRunResult, TraceEvent
+
+
+_BUILT_IN_AGENTS = {
+    "claude": ClaudeCodeAdapter,
+    "claude-code": ClaudeCodeAdapter,
+    "claude_code": ClaudeCodeAdapter,
+    "pi": PiAdapter,
+}
+
+
+def _resolve_agent(agent: Any | None) -> Any:
+    if agent is None:
+        return UnconfiguredAgentAdapter()
+    if not isinstance(agent, str):
+        return agent
+
+    agent_name = agent.strip().lower()
+    try:
+        adapter_type = _BUILT_IN_AGENTS[agent_name]
+    except KeyError as exc:
+        supported = ", ".join(sorted(_BUILT_IN_AGENTS))
+        raise ValueError(f"unsupported agent {agent!r}; supported agents: {supported}") from exc
+    return adapter_type()
 
 
 class UnconfiguredAgentAdapter:
@@ -182,7 +207,7 @@ def doki_factory(request: _pytest.FixtureRequest, tmp_path: Path):
         workspace_path.mkdir(parents=True, exist_ok=True)
         artifact_root.mkdir(parents=True, exist_ok=True)
         return Doki(
-            agent=agent if agent is not None else UnconfiguredAgentAdapter(),
+            agent=_resolve_agent(agent),
             workspace=workspace_path,
             artifact_root=artifact_root,
             run_id=run_id or _default_run_id(request.node.nodeid),

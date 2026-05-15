@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dokimasia.agents.claude_code import ClaudeCodeAdapter
+from dokimasia.agents.pi import PiAdapter
+
 from dokimasia.core.model import AgentRunResult, TraceEvent
 from dokimasia.pytest import doki, doki_factory
 
@@ -149,6 +152,52 @@ def test_named_artifacts_remain_isolated_per_run(doki_factory, tmp_path):
     assert first.artifact_dir == tmp_path / "artifacts" / "run-1-setup-phase"
     assert second.artifact_dir == tmp_path / "artifacts" / "run-2-setup-phase"
     assert first.artifact_dir != second.artifact_dir
+
+
+def test_doki_factory_resolves_supported_builtin_agent_names(doki_factory, tmp_path):
+    cases = {
+        "pi": PiAdapter,
+        "claude-code": ClaudeCodeAdapter,
+        "claude_code": ClaudeCodeAdapter,
+    }
+
+    for name, expected_type in cases.items():
+        configured = doki_factory(
+            agent=name,
+            workspace=tmp_path / f"workspace-{name}",
+            artifact_dir=tmp_path / f"artifacts-{name}",
+        )
+
+        assert isinstance(configured.agent, expected_type)
+
+
+def test_doki_factory_accepts_configured_builtin_adapter_instances(doki_factory, tmp_path):
+    skills_dir = tmp_path / "project-skills"
+    adapter = PiAdapter(pi_bin="project-pi", skills_dir=skills_dir)
+
+    configured = doki_factory(
+        agent=adapter,
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    assert configured.agent is adapter
+    assert configured.agent.pi_bin == "project-pi"
+    assert configured.agent.skills_dir == skills_dir
+
+
+def test_doki_factory_rejects_unknown_agent_names(doki_factory, tmp_path):
+    try:
+        doki_factory(
+            agent="not-a-real-agent",
+            workspace=tmp_path / "workspace",
+            artifact_dir=tmp_path / "artifacts",
+        )
+    except ValueError as exc:
+        assert "unsupported agent" in str(exc)
+        assert "not-a-real-agent" in str(exc)
+    else:
+        raise AssertionError("expected unknown agent name to fail")
 
 
 def test_result_ok_and_failure_summary_report_agent_health_only(doki_factory, tmp_path):
