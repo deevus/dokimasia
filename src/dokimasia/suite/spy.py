@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -19,6 +21,17 @@ class FileSpy:
     real_executable: Path
     invocation_name: str
     source: str
+    audit_log_env_var: str
+    extra_event_fields: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ShellFileSpy:
+    wrapper_path: Path
+    real_script: Path
+    invocation_name: str
+    source: str
+    shell_runner: tuple[str, ...]
     audit_log_env_var: str
     extra_event_fields: Mapping[str, Any] = field(default_factory=dict)
 
@@ -279,6 +292,126 @@ process.exit(exitCode);
     )
 
 
+def _normalize_shell_runner(shell_runner: str | Path | Sequence[str | Path]) -> tuple[str, ...]:
+    if isinstance(shell_runner, str):
+        runner_parts = [shell_runner]
+    elif isinstance(shell_runner, Path):
+        runner_parts = [str(shell_runner)]
+    else:
+        runner_parts = [str(part) for part in shell_runner]
+
+    if not runner_parts:
+        raise ValueError("shell_runner must not be empty")
+    if any(not part for part in runner_parts):
+        raise ValueError("shell_runner entries must not be empty")
+
+    runner_executable = runner_parts[0]
+    if os.sep in runner_executable or (os.altsep and os.altsep in runner_executable):
+        runner_path = Path(runner_executable).expanduser()
+        if not runner_path.exists():
+            raise ValueError(f"shell_runner executable does not exist: {runner_executable}")
+        if not runner_path.is_file():
+            raise ValueError(f"shell_runner executable must be a file: {runner_executable}")
+        if not os.access(runner_path, os.X_OK):
+            raise ValueError(f"shell_runner executable must be executable: {runner_executable}")
+        runner_parts[0] = str(runner_path.resolve())
+    else:
+        resolved_runner = shutil.which(runner_executable)
+        if resolved_runner is None:
+            raise ValueError(f"shell_runner executable not found on PATH: {runner_executable}")
+        runner_parts[0] = resolved_runner
+
+    return tuple(runner_parts)
+
+
+def create_shell_file_spy(
+    *,
+    wrapper_path: Path,
+    real_script: Path,
+    invocation_name: str,
+    source: str,
+    shell_runner: str | Path | Sequence[str | Path] = "sh",
+    audit_log_env_var: str = "DOKIMASIA_COMMAND_LOG",
+    extra_event_fields: Mapping[str, Any] | None = None,
+) -> ShellFileSpy:
+    """Create a shell file-level spy wrapper for a repo-relative action script."""
+
+    if not invocation_name:
+        raise ValueError("invocation_name must not be empty")
+    if not source:
+        raise ValueError("source must not be empty")
+    if not audit_log_env_var:
+        raise ValueError("audit_log_env_var must not be empty")
+
+    wrapper_path = Path(wrapper_path).resolve()
+    real_script = Path(real_script).resolve()
+    _validate_file_spy_paths(wrapper_path, real_script, real_label="real_script")
+    runner_parts = _normalize_shell_runner(shell_runner)
+
+    wrapper_path.parent.mkdir(parents=True, exist_ok=True)
+    extra_fields = dict(extra_event_fields or {})
+    extra_fields_json = json.dumps(extra_fields, sort_keys=True)
+    runner_command = " ".join(shlex.quote(part) for part in runner_parts)
+    wrapper_path.write_text(
+        f"""#!/bin/sh
+{runner_command} {shlex.quote(str(real_script))} "$@"
+__doki_exit_code=$?
+{shlex.quote(sys.executable)} - "$__doki_exit_code" "$$" "$@" <<'__DOKIMASIA_SHELL_FILE_SPY_LOG__'
+from __future__ import annotations
+
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+audit_env_var = {audit_log_env_var!r}
+invocation_name = {invocation_name!r}
+source = {source!r}
+extra_event_fields = json.loads({extra_fields_json!r})
+exit_code = int(sys.argv[1])
+pid = int(sys.argv[2])
+argv = sys.argv[3:]
+audit_value = os.environ.get(audit_env_var)
+if not audit_value:
+    raise RuntimeError(f"{{audit_env_var}} is required for shell file spy wrapper")
+event = dict(extra_event_fields)
+event.update({{
+    "action": invocation_name,
+    "source": source,
+    "argv": argv,
+    "cwd": os.getcwd(),
+    "pid": pid,
+    "phase": "finish",
+    "exit_code": exit_code,
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+}})
+audit = Path(audit_value)
+audit.parent.mkdir(parents=True, exist_ok=True)
+with audit.open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(event, sort_keys=True) + "\\n")
+__DOKIMASIA_SHELL_FILE_SPY_LOG__
+__doki_log_exit_code=$?
+if [ "$__doki_log_exit_code" -ne 0 ]; then
+    exit "$__doki_log_exit_code"
+fi
+exit "$__doki_exit_code"
+""",
+        encoding="utf-8",
+    )
+    wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    return ShellFileSpy(
+        wrapper_path=wrapper_path,
+        real_script=real_script,
+        invocation_name=invocation_name,
+        source=source,
+        shell_runner=runner_parts,
+        audit_log_env_var=audit_log_env_var,
+        extra_event_fields=extra_fields,
+    )
+
+
 def create_spy(
     root: Path,
     executable_name: str,
@@ -350,4 +483,12 @@ raise SystemExit(proc.returncode)
     )
 
 
-__all__ = ["CommandSpy", "FileSpy", "create_file_spy", "create_node_file_spy", "create_spy"]
+__all__ = [
+    "CommandSpy",
+    "FileSpy",
+    "ShellFileSpy",
+    "create_file_spy",
+    "create_node_file_spy",
+    "create_shell_file_spy",
+    "create_spy",
+]

@@ -10,7 +10,15 @@ from pathlib import Path
 
 import pytest
 
-from dokimasia.suite.spy import CommandSpy, FileSpy, create_file_spy, create_node_file_spy, create_spy
+from dokimasia.suite.spy import (
+    CommandSpy,
+    FileSpy,
+    ShellFileSpy,
+    create_file_spy,
+    create_node_file_spy,
+    create_shell_file_spy,
+    create_spy,
+)
 
 
 def write_real_executable(root: Path, exit_code: int = 0) -> Path:
@@ -188,6 +196,31 @@ raise SystemExit({exit_code})
     return real
 
 
+def write_real_shell_action(root: Path, exit_code: int = 0) -> Path:
+    real = root / "real_action.sh"
+    real.write_text(
+        f"""#!/bin/sh
+{sys.executable} - "$REAL_SHELL_ACTION_RECORD" "$@" <<'__DOKI_REAL_SHELL_PY__'
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(
+    json.dumps({{"argv": sys.argv[2:], "cwd": os.getcwd()}}, sort_keys=True),
+    encoding="utf-8",
+)
+__DOKI_REAL_SHELL_PY__
+exit {exit_code}
+""",
+        encoding="utf-8",
+    )
+    real.chmod(0o755)
+    return real
+
+
 def write_real_node_action(root: Path, exit_code: int = 0) -> Path:
     real = root / "real_action.js"
     real.write_text(
@@ -296,6 +329,159 @@ def test_create_file_spy_rejects_invalid_paths_before_agent_run(tmp_path):
             create_file_spy(
                 invocation_name="actions/issues/lock.py",
                 source="demo-action",
+                **kwargs,
+            )
+
+
+def test_create_shell_file_spy_creates_shell_action_wrapper_for_direct_invocation(tmp_path):
+    root = tmp_path
+    record_path = root / "real-shell-action-record.json"
+    command_log = root / "artifacts" / "commands.jsonl"
+    wrapper_path = root / "workspace" / "actions" / "issues" / "lock.sh"
+    real = write_real_shell_action(root)
+
+    spy = create_shell_file_spy(
+        wrapper_path=wrapper_path,
+        real_script=real,
+        invocation_name="actions/issues/lock.sh",
+        source="demo-shell-action",
+    )
+
+    assert isinstance(spy, ShellFileSpy)
+    assert spy.wrapper_path == wrapper_path.resolve()
+    assert os.access(wrapper_path, os.X_OK)
+
+    result = subprocess.run(
+        [str(wrapper_path), "1", "two words", "*.md"],
+        cwd=root / "workspace",
+        env=os.environ | {"REAL_SHELL_ACTION_RECORD": str(record_path), "DOKIMASIA_COMMAND_LOG": str(command_log)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    expected_cwd = str((root / "workspace").resolve())
+    assert json.loads(record_path.read_text(encoding="utf-8")) == {
+        "argv": ["1", "two words", "*.md"],
+        "cwd": expected_cwd,
+    }
+    event = json.loads(command_log.read_text(encoding="utf-8").strip())
+    assert event["action"] == "actions/issues/lock.sh"
+    assert event["argv"] == ["1", "two words", "*.md"]
+    assert event["cwd"] == expected_cwd
+    assert event["phase"] == "finish"
+    assert event["source"] == "demo-shell-action"
+    assert event["exit_code"] == 0
+    assert isinstance(event["pid"], int)
+    assert "timestamp" in event
+
+
+def test_shell_file_spy_works_through_shell_interpreter_and_preserves_nonzero_exit(tmp_path):
+    root = tmp_path
+    record_path = root / "real-shell-action-record.json"
+    command_log = root / "commands.jsonl"
+    wrapper_path = root / "workspace" / "actions" / "issues" / "lock.sh"
+    real = write_real_shell_action(root, exit_code=12)
+
+    create_shell_file_spy(
+        wrapper_path=wrapper_path,
+        real_script=real,
+        invocation_name="actions/issues/lock.sh",
+        source="demo-shell-action",
+    )
+
+    result = subprocess.run(
+        ["/bin/sh", str(wrapper_path), "via", "sh"],
+        cwd=root / "workspace",
+        env=os.environ | {"REAL_SHELL_ACTION_RECORD": str(record_path), "DOKIMASIA_COMMAND_LOG": str(command_log)},
+        check=False,
+    )
+
+    assert result.returncode == 12
+    assert json.loads(record_path.read_text(encoding="utf-8"))["argv"] == ["via", "sh"]
+    event = json.loads(command_log.read_text(encoding="utf-8").strip())
+    assert event["argv"] == ["via", "sh"]
+    assert event["exit_code"] == 12
+
+
+def test_shell_file_spy_forwards_through_configured_runner(tmp_path):
+    root = tmp_path
+    record_path = root / "real-shell-action-record.json"
+    runner_record_path = root / "runner-record.json"
+    command_log = root / "commands.jsonl"
+    wrapper_path = root / "workspace" / "actions" / "issues" / "lock.sh"
+    real = write_real_shell_action(root)
+    runner = root / "runner.sh"
+    runner.write_text(
+        f"""#!/bin/sh
+{sys.executable} - {str(runner_record_path)!r} "$@" <<'__DOKI_RUNNER_PY__'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:], sort_keys=True), encoding="utf-8")
+__DOKI_RUNNER_PY__
+exec /bin/sh "$@"
+""",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+
+    create_shell_file_spy(
+        wrapper_path=wrapper_path,
+        real_script=real,
+        invocation_name="actions/issues/lock.sh",
+        source="demo-shell-action",
+        shell_runner=runner,
+    )
+
+    result = subprocess.run(
+        [str(wrapper_path), "alpha", "beta gamma"],
+        cwd=root / "workspace",
+        env=os.environ | {"REAL_SHELL_ACTION_RECORD": str(record_path), "DOKIMASIA_COMMAND_LOG": str(command_log)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(runner_record_path.read_text(encoding="utf-8")) == [str(real.resolve()), "alpha", "beta gamma"]
+    assert json.loads(record_path.read_text(encoding="utf-8"))["argv"] == ["alpha", "beta gamma"]
+
+
+def test_create_shell_file_spy_rejects_invalid_paths_and_runner_config_before_agent_run(tmp_path):
+    root = tmp_path
+    missing_real = root / "missing.sh"
+    real_directory = root / "real-dir"
+    real_directory.mkdir()
+    wrapper_directory = root / "wrapper-dir"
+    wrapper_directory.mkdir()
+    real = write_real_shell_action(root)
+    runner_directory = root / "runner-dir"
+    runner_directory.mkdir()
+
+    invalid_cases = [
+        {"wrapper_path": root / "wrapper.sh", "real_script": missing_real},
+        {"wrapper_path": root / "wrapper.sh", "real_script": real_directory},
+        {"wrapper_path": wrapper_directory, "real_script": real},
+        {"wrapper_path": real, "real_script": real},
+        {"wrapper_path": root / "wrapper.sh", "real_script": real, "shell_runner": ""},
+        {"wrapper_path": root / "wrapper.sh", "real_script": real, "shell_runner": []},
+        {"wrapper_path": root / "wrapper.sh", "real_script": real, "shell_runner": [""]},
+        {"wrapper_path": root / "wrapper.sh", "real_script": real, "shell_runner": root / "missing-runner"},
+        {"wrapper_path": root / "wrapper.sh", "real_script": real, "shell_runner": runner_directory},
+    ]
+
+    for kwargs in invalid_cases:
+        with pytest.raises(ValueError):
+            create_shell_file_spy(
+                invocation_name="actions/issues/lock.sh",
+                source="demo-shell-action",
                 **kwargs,
             )
 
