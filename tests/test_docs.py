@@ -30,6 +30,22 @@ def test_readme_defines_generic_project_suite_boundary():
     )
 
 
+def test_readme_documents_invocation_assertions_and_file_spies():
+    text = README.read_text(encoding="utf-8")
+
+    for expected in [
+        "assert_invoked(result, LOCK_ACTION)",
+        "create_file_spy(",
+        "create_node_file_spy(",
+        "create_shell_file_spy(",
+        "Production action scripts do not import Dokimasia",
+        "PATH spies and file spies both produce normalized invocation evidence",
+        "assert_command_ran(result, matcher)` remains available for compatibility",
+        "not a substitute for independent domain-state verification",
+    ]:
+        assert expected in text
+
+
 def test_readme_describes_pytest_first_authoring_surface():
     text = README.read_text(encoding="utf-8")
 

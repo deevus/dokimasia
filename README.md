@@ -52,7 +52,7 @@ from pathlib import Path
 import pytest
 
 from dokimasia.agents.pi import PiAdapter
-from dokimasia.pytest import assert_command_ran, cmd
+from dokimasia.pytest import assert_invoked, cmd
 
 ISSUE_CREATE = cmd.match("tea", pattern=[("issues", "issue"), "create"])
 
@@ -68,7 +68,7 @@ def test_agent_creates_issue(doki_factory, prepared_repo):
 
     assert result.ok, result.failure_summary
     assert result.has_skill_loaded("create-issue")
-    assert_command_ran(result, ISSUE_CREATE)
+    assert_invoked(result, ISSUE_CREATE)
 ```
 
 Project suites provide provisioning, audit normalization, independent state verification, and fixtures for their own domain objects.
@@ -109,36 +109,40 @@ Supported variables are `DOKIMASIA_PROVIDER`, `DOKIMASIA_MODEL`, `DOKIMASIA_THIN
 
 For custom adapters, instantiate and configure the adapter directly, then pass it as `agent=`.
 
-## Pytest command matchers
+## Pytest invocation matchers
 
-Use `dokimasia.pytest.cmd` to define static matchers for observed top-level executable invocations. Matchers are safe to create at module import time:
+Use `dokimasia.pytest.cmd` to define static matchers for observed executable invocations. An invocation can be a PATH-spied host command such as `tea`, or a repo-relative action script such as `actions/issues/lock.py`. Matchers are safe to create at module import time:
 
 ```python
-from dokimasia.pytest import cmd
+from dokimasia.pytest import assert_invoked, cmd
 
 ISSUE_CREATE = cmd.match(
     "tea",
     pattern=[("issues", "issue", "i"), ("create", "c")],
 )
+LOCK_ACTION = cmd.match(
+    "actions/issues/lock.py",
+    pattern=["1", "spam"],
+    mode="exact",
+)
 
 assert ISSUE_CREATE.matches({"executable": "tea", "argv": ["--repo", "org/repo", "issue", "create"]})
+assert LOCK_ACTION.matches({"action": "actions/issues/lock.py", "argv": ["1", "spam"]})
 ```
 
 `pattern=` accepts token groups; `patterns=` accepts explicit alternatives. Matching modes are `ordered` (default, gaps allowed), `contains` (unordered containment), `span` (contiguous span), `prefix`, and `exact`. Use `where=` for custom predicates and `label=` to override generated labels such as `tea.issues.create`.
 
-Use `assert_command_ran(result, matcher)` to assert against observed `result.commands` in pytest tests. By default it requires at least one successful matching command. Use keyword-only `times=`, `min=`, `max=`, and `exit="success" | "failure" | "any"` for count and exit-status constraints:
+Use `assert_invoked(result, matcher)` as the preferred general assertion against observed `result.commands` in pytest tests. By default it requires at least one successful matching invocation. Use keyword-only `times=`, `min=`, `max=`, and `exit="success" | "failure" | "any"` for count and exit-status constraints:
 
 ```python
-from dokimasia.pytest import assert_command_ran, cmd
-
-ISSUE_CREATE = cmd.match("tea", pattern=[("issues", "issue"), "create"])
-
-assert_command_ran(result, ISSUE_CREATE)
-assert_command_ran(result, ISSUE_CREATE, times=1)
-assert_command_ran(result, ISSUE_CREATE, max=0, exit="any")  # did not run
+assert_invoked(result, ISSUE_CREATE)
+assert_invoked(result, LOCK_ACTION, times=1)
+assert_invoked(result, LOCK_ACTION, max=0, exit="any")  # did not run
 ```
 
-Static spy specs declare wrappers for pytest suites that need audited host commands:
+`assert_command_ran(result, matcher)` remains available for compatibility with suites that only assert command-shaped evidence. New suites should prefer `assert_invoked(...)` because PATH spies and file spies both produce normalized invocation evidence on `result.commands`.
+
+Static spy specs declare wrappers for pytest suites that need audited host commands earlier in `PATH`:
 
 ```python
 from dokimasia.pytest import cmd
@@ -152,6 +156,84 @@ def test_issue_flow(doki_factory):
 
 `doki_factory(spies=[...])` resolves the real executable before adding wrapper directories to `PATH`, materializes wrappers under the fixture artifact area, and only prepends the spy `bin` directory when spies are explicitly registered. `cmd.spy("name")` records audit events with `source="name"` by default; pass `source=` when the audit source should differ from the executable name.
 
+Invocation evidence proves that an approved executable path was used. It is not a substitute for independent domain-state verification. A good end-to-end test still asserts the resulting issue, ticket, cloud resource, or other business state through an oracle outside the agent's trace and stdout.
+
+## File spies for action scripts
+
+Use file spies when the executable under test is a repo-relative action script rather than a host command discovered through `PATH`. The suite replaces the action file in the disposable test workspace with a wrapper. The wrapper forwards to the real project-owned script, records a JSONL event through `DOKIMASIA_COMMAND_LOG`, and preserves the real script's exit code. Production action scripts do not import Dokimasia; only the test workspace wrapper depends on Dokimasia's generated instrumentation.
+
+Python action example:
+
+```python
+from dokimasia.pytest import assert_invoked, cmd
+from dokimasia.suite import create_file_spy
+
+LOCK_ACTION = cmd.match("actions/issues/lock.py", pattern=["1", "spam"], mode="exact")
+
+
+def test_agent_locks_issue(doki_factory, workspace_repo, real_repo):
+    create_file_spy(
+        wrapper_path=workspace_repo / "actions/issues/lock.py",
+        real_executable=real_repo / "actions/issues/lock.py",
+        invocation_name="actions/issues/lock.py",
+        source="issue-action",
+    )
+
+    result = doki_factory(workspace=workspace_repo).run("Lock issue 1 as spam")
+
+    assert result.ok, result.failure_summary
+    assert_invoked(result, LOCK_ACTION)
+```
+
+Node action example:
+
+```python
+from dokimasia.pytest import assert_invoked, cmd
+from dokimasia.suite import create_node_file_spy
+
+LOCK_ACTION = cmd.match("actions/issues/lock.js", pattern=["1", "spam"], mode="exact")
+
+
+def test_agent_locks_issue_with_node_action(doki_factory, workspace_repo, real_repo):
+    create_node_file_spy(
+        wrapper_path=workspace_repo / "actions/issues/lock.js",
+        real_script=real_repo / "actions/issues/lock.js",
+        invocation_name="actions/issues/lock.js",
+        source="issue-action",
+        node_runner="node",
+    )
+
+    result = doki_factory(workspace=workspace_repo).run("Lock issue 1 as spam")
+
+    assert result.ok, result.failure_summary
+    assert_invoked(result, LOCK_ACTION)
+```
+
+Shell action example:
+
+```python
+from dokimasia.pytest import assert_invoked, cmd
+from dokimasia.suite import create_shell_file_spy
+
+LOCK_ACTION = cmd.match("actions/issues/lock.sh", pattern=["1", "spam"], mode="exact")
+
+
+def test_agent_locks_issue_with_shell_action(doki_factory, workspace_repo, real_repo):
+    create_shell_file_spy(
+        wrapper_path=workspace_repo / "actions/issues/lock.sh",
+        real_script=real_repo / "actions/issues/lock.sh",
+        invocation_name="actions/issues/lock.sh",
+        source="issue-action",
+        shell_runner="sh",
+    )
+
+    result = doki_factory(workspace=workspace_repo).run("Lock issue 1 as spam")
+
+    assert result.ok, result.failure_summary
+    assert_invoked(result, LOCK_ACTION)
+```
+
+The recorded event includes normalized fields such as `action`, `argv`, `cwd`, `pid`, `phase`, `source`, `exit_code`, and `timestamp`. `Doki.run(...)` loads those events into the returned result, so assertions use `assert_invoked(result, LOCK_ACTION)` directly rather than reading audit files in the test.
 
 ## Suite authoring helpers
 
