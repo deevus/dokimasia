@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tomllib
 
 
-README = Path(__file__).resolve().parents[1] / "README.md"
+ROOT = Path(__file__).resolve().parents[1]
+README = ROOT / "README.md"
+MKDOCS = ROOT / "mkdocs.yml"
+PYPROJECT = ROOT / "pyproject.toml"
+WEB_DOCS = ROOT / "docs" / "web"
 
 
 def test_readme_documents_suite_authoring_namespace_and_modules():
@@ -43,3 +48,20 @@ def test_readme_describes_pytest_first_authoring_surface():
     assert "tags" not in text
     assert "templating" not in text
     assert "state schemas" not in text
+
+
+def test_mkdocs_site_uses_docs_web_directory():
+    text = MKDOCS.read_text(encoding="utf-8")
+
+    assert "docs_dir: docs/web" in text
+    assert (WEB_DOCS / "index.md").is_file()
+    assert (WEB_DOCS / "getting-started.md").is_file()
+    assert (WEB_DOCS / "api.md").is_file()
+
+
+def test_pyproject_declares_docs_extra_dependencies():
+    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+
+    docs_deps = data["project"]["optional-dependencies"]["docs"]
+    assert any(dep.startswith("mkdocs-material") for dep in docs_deps)
+    assert any(dep.startswith("mkdocstrings[python]") for dep in docs_deps)

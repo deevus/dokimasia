@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tomllib
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -23,13 +24,17 @@ def test_yaml_shaped_audit_expectation_helpers_are_removed():
     assert not (SRC_ROOT / "audit" / "assertions.py").exists()
 
 
-def test_pyyaml_is_not_a_package_dependency():
-    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    lockfile = (PROJECT_ROOT / "uv.lock").read_text(encoding="utf-8")
+def test_pyyaml_is_not_a_runtime_package_dependency():
+    pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    lockfile = tomllib.loads((PROJECT_ROOT / "uv.lock").read_text(encoding="utf-8"))
 
-    assert "PyYAML" not in pyproject
-    assert "pyyaml" not in lockfile.lower()
-    assert "pytest" in pyproject
+    runtime_dependencies = [dependency.lower() for dependency in pyproject["project"]["dependencies"]]
+    locked_package = next(package for package in lockfile["package"] if package["name"] == "dokimasia")
+    locked_runtime_dependencies = [dependency["name"].lower() for dependency in locked_package["dependencies"]]
+
+    assert not any("pyyaml" in dependency for dependency in runtime_dependencies)
+    assert "pyyaml" not in locked_runtime_dependencies
+    assert any(dependency.startswith("pytest") for dependency in runtime_dependencies)
 
 
 def test_internal_tests_are_pytest_native():

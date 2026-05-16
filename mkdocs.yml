@@ -1,0 +1,62 @@
+site_name: Dokimasia
+site_description: Pytest-first acceptance testing for agent capabilities.
+site_url: https://deevus.github.io/dokimasia/
+repo_url: https://github.com/deevus/dokimasia
+repo_name: deevus/dokimasia
+
+docs_dir: docs/web
+site_dir: site
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - API reference: api.md
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  palette:
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - src
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_source: true
+            separate_signature: true
+            show_signature_annotations: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.snippets
+
+extra_css:
+  - stylesheets/extra.css
