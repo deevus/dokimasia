@@ -47,8 +47,11 @@ Your project provides provisioning, audit normalization, state verification, and
 Author Dokimasia suites as ordinary pytest modules. Installing Dokimasia registers its pytest plugin, so test modules can request the `doki_factory` and `doki` fixtures directly. Use plain Python setup code, project-owned fixtures, pytest marks, and normal pytest assertions instead of loading declarative scenario files:
 
 ```python
+from pathlib import Path
+
 import pytest
 
+from dokimasia.agents.pi import PiAdapter
 from dokimasia.pytest import assert_command_ran, cmd
 
 ISSUE_CREATE = cmd.match("tea", pattern=[("issues", "issue"), "create"])
@@ -56,7 +59,10 @@ ISSUE_CREATE = cmd.match("tea", pattern=[("issues", "issue"), "create"])
 
 @pytest.mark.agent_e2e
 def test_agent_creates_issue(doki_factory, prepared_repo):
-    doki = doki_factory(agent="pi", workspace=prepared_repo)
+    doki = doki_factory(
+        agent=PiAdapter(skills_dir=Path("skills")),
+        workspace=prepared_repo,
+    )
 
     result = doki.run("Create the requested issue")
 
@@ -67,15 +73,29 @@ def test_agent_creates_issue(doki_factory, prepared_repo):
 
 Project suites provide provisioning, audit normalization, independent state verification, and fixtures for their own domain objects.
 
-Configure built-in agent CLI options at `doki_factory` creation time. `model` and `extra_args` work with `pi` and `claude-code`; `provider` and `thinking` are Pi-only options:
+For Pi skill tests, `skills_dir` points at the skills under test. Dokimasia passes that directory to Pi and uses reads of `SKILL.md` files under it as skill-loaded evidence for assertions such as `result.has_skill_loaded(...)`.
+
+Configure named built-in agent CLI options at `doki_factory` creation time. `model` and `extra_args` work with `claude-code`:
 
 ```python
 doki = doki_factory(
-    agent="pi",
-    provider="anthropic",
+    agent="claude-code",
     model="claude-sonnet-4",
-    thinking="high",
-    extra_args=["--models", "claude-*"],
+    extra_args=["--allowedTools", "Read"],
+)
+```
+
+For Pi skill tests, configure Pi-specific CLI options on the explicit adapter:
+
+```python
+doki = doki_factory(
+    agent=PiAdapter(
+        skills_dir=Path("skills"),
+        provider="anthropic",
+        model="claude-sonnet-4",
+        thinking="high",
+        extra_args=["--models", "claude-*"],
+    ),
 )
 ```
 
