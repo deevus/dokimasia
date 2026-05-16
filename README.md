@@ -12,8 +12,6 @@ A passing Dokimasia test gives you three kinds of evidence:
 
 Dokimasia is not a model benchmark. It is CI-style acceptance testing for agent capabilities that mutate real systems.
 
-CLI name: `doki`.
-
 ## Why Dokimasia?
 
 Teams are giving agents access to MCP servers, internal CLIs, reusable skills, and workflow automations. Before broad rollout, they need evidence that agents use those capabilities correctly, safely, and observably.
