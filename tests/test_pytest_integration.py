@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+
+import pytest
 
 from dokimasia.agents.claude_code import ClaudeCodeAdapter
 from dokimasia.agents.pi import PiAdapter
 
 from dokimasia.core.model import AgentRunResult, TraceEvent
 from dokimasia.pytest import cmd
-from dokimasia.suite import create_file_spy
+from dokimasia.suite import create_file_spy, create_node_file_spy
 
 
 class FakeAdapter:
@@ -275,6 +278,39 @@ def test_python_file_spy_invocations_can_be_asserted_from_doki_result(doki_facto
     cmd.assert_invoked(
         result,
         cmd.match("actions/issues/lock.py", pattern=["1", "spam"], mode="exact"),
+    )
+
+
+def test_node_file_spy_invocations_can_be_asserted_from_doki_result(doki_factory, tmp_path):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required for node file spy tests")
+    workspace = tmp_path / "workspace"
+    wrapper_path = workspace / "actions" / "issues" / "lock.js"
+    real_action = tmp_path / "real-lock.js"
+    real_action.write_text(
+        'process.exit(JSON.stringify(process.argv.slice(2)) === \'["1","spam"]\' ? 0 : 9);\n',
+        encoding="utf-8",
+    )
+
+    create_node_file_spy(
+        wrapper_path=wrapper_path,
+        real_script=real_action,
+        invocation_name="actions/issues/lock.js",
+        source="test-node-action",
+        node_runner=node,
+    )
+
+    result = doki_factory(
+        agent=SubprocessAdapter([[node, str(wrapper_path), "1", "spam"]]),
+        workspace=workspace,
+        artifact_dir=tmp_path / "artifacts",
+    ).run("lock issue with node")
+
+    assert result.exit_code == 0
+    cmd.assert_invoked(
+        result,
+        cmd.match("actions/issues/lock.js", pattern=["1", "spam"], mode="exact"),
     )
 
 
