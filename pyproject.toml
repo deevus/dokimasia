@@ -14,6 +14,9 @@ dependencies = [
   "python-slugify>=8.0.4",
 ]
 
+[project.entry-points.pytest11]
+dokimasia = "dokimasia.pytest"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

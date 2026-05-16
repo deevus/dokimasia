@@ -128,6 +128,37 @@ def test_default_doki_fixture_is_available(doki):
     assert doki.artifact_root.exists()
 
 
+def test_consumer_suite_discovers_dokimasia_pytest_fixtures(tmp_path):
+    suite = tmp_path / "consumer-suite"
+    suite.mkdir()
+    (suite / "test_downstream_fixtures.py").write_text(
+        """
+def test_downstream_suite_can_request_dokimasia_fixtures(doki_factory, doki):
+    configured = doki_factory()
+
+    assert configured.workspace.exists()
+    assert configured.artifact_root.exists()
+    assert doki.workspace.exists()
+    assert doki.artifact_root.exists()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", str(suite)],
+        cwd=tmp_path,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
 def test_doki_factory_runs_agent_and_returns_artifacted_result(doki_factory, tmp_path):
     agent = FakeAdapter()
     workspace = tmp_path / "workspace"

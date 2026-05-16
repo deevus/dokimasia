@@ -44,7 +44,7 @@ Your project provides provisioning, audit normalization, state verification, and
 
 ## Python usage
 
-Author Dokimasia suites as ordinary pytest modules. Use plain Python setup code, project-owned fixtures, pytest marks, and normal pytest assertions instead of loading declarative scenario files:
+Author Dokimasia suites as ordinary pytest modules. Installing Dokimasia registers its pytest plugin, so test modules can request the `doki_factory` and `doki` fixtures directly. Use plain Python setup code, project-owned fixtures, pytest marks, and normal pytest assertions instead of loading declarative scenario files:
 
 ```python
 import pytest
