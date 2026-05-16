@@ -12,6 +12,7 @@ from dokimasia.agents.pi import PiAdapter
 
 from dokimasia.core.model import AgentRunResult, TraceEvent
 from dokimasia.pytest import cmd
+from dokimasia.suite import create_file_spy
 
 
 class FakeAdapter:
@@ -215,6 +216,35 @@ def test_doki_run_loads_command_log_events_without_registered_path_spies(doki_fa
     assert [command.executable for command in result.commands] == ["actions/issues/lock.py"]
     assert [command.argv for command in result.commands] == [["1", "spam"]]
     assert result.commands[0].raw["action"] == "actions/issues/lock.py"
+
+
+def test_python_file_spy_invocations_can_be_asserted_from_doki_result(doki_factory, tmp_path):
+    workspace = tmp_path / "workspace"
+    wrapper_path = workspace / "actions" / "issues" / "lock.py"
+    real_action = tmp_path / "real-lock.py"
+    real_action.write_text(
+        "from __future__ import annotations\nimport sys\nraise SystemExit(0 if sys.argv[1:] == ['1', 'spam'] else 9)\n",
+        encoding="utf-8",
+    )
+
+    create_file_spy(
+        wrapper_path=wrapper_path,
+        real_executable=real_action,
+        invocation_name="actions/issues/lock.py",
+        source="test-action",
+    )
+
+    result = doki_factory(
+        agent=SubprocessAdapter([[sys.executable, str(wrapper_path), "1", "spam"]]),
+        workspace=workspace,
+        artifact_dir=tmp_path / "artifacts",
+    ).run("lock issue")
+
+    assert result.exit_code == 0
+    cmd.assert_invoked(
+        result,
+        cmd.match("actions/issues/lock.py", pattern=["1", "spam"], mode="exact"),
+    )
 
 
 def test_doki_factory_materializes_static_command_spies(doki_factory, tmp_path):
