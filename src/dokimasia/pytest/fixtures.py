@@ -47,9 +47,9 @@ def _resolve_agent(
     provider: str | None = None,
     model: str | None = None,
     thinking: str | None = None,
-    extra_args: Sequence[str] = (),
+    extra_args: Sequence[str] | None = None,
 ) -> Any:
-    has_provider_options = any([provider is not None, model is not None, thinking is not None, bool(extra_args)])
+    has_provider_options = any([provider is not None, model is not None, thinking is not None, extra_args is not None])
     if agent is None:
         if has_provider_options:
             raise ValueError("provider, model, thinking, and extra_args can only be used with named built-in agents")
@@ -291,7 +291,7 @@ def doki_factory(request: _pytest.FixtureRequest, tmp_path: Path):
         provider: str | None = None,
         model: str | None = None,
         thinking: str | None = None,
-        extra_args: Sequence[str] = (),
+        extra_args: Sequence[str] | None = None,
     ) -> Doki:
         workspace_path = Path(workspace) if workspace is not None else tmp_path / "workspace"
         artifact_root = (

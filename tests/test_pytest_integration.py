@@ -817,6 +817,55 @@ def test_doki_factory_passes_model_to_named_builtin_agent(doki_factory, tmp_path
     assert claude.agent.extra_args == ("--allowedTools", "Read")
 
 
+def test_doki_factory_uses_env_extra_args_for_named_builtin_agent(doki_factory, tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    claude_bin = bin_dir / "claude"
+    argv_path = tmp_path / "claude-argv.json"
+    _write_argv_recorder(claude_bin, argv_path)
+
+    doki = doki_factory(
+        agent="claude-code",
+        env={
+            "PATH": str(bin_dir),
+            "DOKIMASIA_EXTRA_ARGS": '--allowedTools "Read Write"',
+        },
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    result = doki.run("use the skill")
+
+    assert result.exit_code == 0
+    argv = json.loads(argv_path.read_text(encoding="utf-8"))
+    assert argv[-3:] == ["--allowedTools", "Read Write", "use the skill"]
+
+
+def test_doki_factory_explicit_extra_args_override_env_extra_args(doki_factory, tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    claude_bin = bin_dir / "claude"
+    argv_path = tmp_path / "claude-argv.json"
+    _write_argv_recorder(claude_bin, argv_path)
+
+    doki = doki_factory(
+        agent="claude-code",
+        env={
+            "PATH": str(bin_dir),
+            "DOKIMASIA_EXTRA_ARGS": '--allowedTools "Read Write"',
+        },
+        extra_args=["--allowedTools", "Write"],
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    result = doki.run("use the skill")
+
+    assert result.exit_code == 0
+    argv = json.loads(argv_path.read_text(encoding="utf-8"))
+    assert argv[-3:] == ["--allowedTools", "Write", "use the skill"]
+
+
 def test_doki_factory_rejects_pi_only_options_for_claude_code(doki_factory, tmp_path):
     try:
         doki_factory(
