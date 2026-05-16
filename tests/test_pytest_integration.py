@@ -184,6 +184,39 @@ def test_doki_run_preserves_adapter_commands_when_no_spies_are_registered(doki_f
     assert [command.argv for command in result.commands] == [["one"]]
 
 
+def test_doki_run_loads_command_log_events_without_registered_path_spies(doki_factory, tmp_path):
+    class CommandLogAdapter(FakeAdapter):
+        def run(self, prompt, workspace, artifact_dir, env, timeout_seconds):
+            command_log = Path(env["DOKIMASIA_COMMAND_LOG"])
+            command_log.write_text(
+                json.dumps(
+                    {
+                        "action": "actions/issues/lock.py",
+                        "argv": ["1", "spam"],
+                        "cwd": str(workspace),
+                        "exit_code": 0,
+                        "phase": "finish",
+                        "source": "test-action",
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            return super().run(prompt, workspace, artifact_dir, env, timeout_seconds)
+
+    result = doki_factory(
+        agent=CommandLogAdapter(),
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    ).run("adapter command log")
+
+    assert (result.artifact_dir / "commands.jsonl").exists()
+    assert [command.executable for command in result.commands] == ["actions/issues/lock.py"]
+    assert [command.argv for command in result.commands] == [["1", "spam"]]
+    assert result.commands[0].raw["action"] == "actions/issues/lock.py"
+
+
 def test_doki_factory_materializes_static_command_spies(doki_factory, tmp_path):
     host_bin = tmp_path / "host-bin"
     host_bin.mkdir()

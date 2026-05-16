@@ -105,10 +105,12 @@ class DokiResult:
         artifact_dir: Path,
         command_log_path: Path | None = None,
     ) -> "DokiResult":
+        adapter_commands = [normalize_invocation(command) for command in getattr(agent_result, "commands", [])]
         if command_log_path is None:
-            commands = [normalize_invocation(command) for command in getattr(agent_result, "commands", [])]
+            commands = adapter_commands
         else:
-            commands = _load_command_log(command_log_path)
+            log_commands = _load_command_log(command_log_path)
+            commands = log_commands if log_commands else adapter_commands
         return cls(
             exit_code=agent_result.exit_code,
             timed_out=agent_result.timed_out,
@@ -220,8 +222,7 @@ class Doki:
             run_env,
             self.timeout_seconds if timeout_seconds is None else timeout_seconds,
         )
-        command_source = command_log if self.command_spies else None
-        return DokiResult.from_agent_result(agent_result, artifact_dir, command_source)
+        return DokiResult.from_agent_result(agent_result, artifact_dir, command_log)
 
     def _artifact_slug(self, artifact_name: str | None) -> str:
         run_slug = f"run-{self._run_count}"
