@@ -25,6 +25,7 @@ class CommandInvocation:
     raw: Any
     source: str | None = None
     root: str | None = None
+    action: str | None = None
     exit_code: int | None = None
 
 
@@ -111,6 +112,28 @@ def match(
     )
 
 
+def assert_invoked(
+    result: Any,
+    matcher: CommandMatcher,
+    *,
+    times: int | None = None,
+    min: int | None = None,
+    max: int | None = None,
+    exit: ExitFilter = "success",
+) -> None:
+    """Assert that result.commands includes invocations matching a command matcher."""
+
+    _assert_invocation_count(
+        result,
+        matcher,
+        times=times,
+        min=min,
+        max=max,
+        exit=exit,
+        assertion_name="invocation",
+    )
+
+
 def assert_command_ran(
     result: Any,
     matcher: CommandMatcher,
@@ -122,6 +145,75 @@ def assert_command_ran(
 ) -> None:
     """Assert that result.commands includes invocations matching a command matcher."""
 
+    _assert_invocation_count(
+        result,
+        matcher,
+        times=times,
+        min=min,
+        max=max,
+        exit=exit,
+        assertion_name="command",
+    )
+
+
+def spy(executable: str, *, source: str | None = None) -> CommandSpySpec:
+    """Create a static command spy declaration for pytest doki_factory."""
+
+    if not executable:
+        raise ValueError("executable is required")
+    resolved_source = executable if source is None else source
+    if not resolved_source:
+        raise ValueError("source must not be empty")
+    return CommandSpySpec(executable=executable, source=resolved_source)
+
+
+def normalize_invocation(invocation: Any) -> CommandInvocation:
+    if isinstance(invocation, CommandInvocation):
+        return invocation
+
+    executable = _field(invocation, "executable")
+    action = _field(invocation, "action")
+    source = _field(invocation, "source")
+    root = _field(invocation, "root")
+    if executable is _MISSING:
+        if action is not _MISSING:
+            executable = action
+        elif source is not _MISSING:
+            executable = source
+        else:
+            executable = root
+    if executable is _MISSING or executable is None or executable == "":
+        raise ValueError("command invocation must include executable, action, source, or root")
+
+    argv = _field(invocation, "argv")
+    if argv is _MISSING or argv is None:
+        argv = []
+
+    exit_code = _field(invocation, "exit_code")
+    if exit_code is _MISSING:
+        exit_code = None
+
+    return CommandInvocation(
+        executable=str(executable),
+        argv=[str(token) for token in argv],
+        raw=invocation,
+        source=None if source is _MISSING else str(source),
+        root=None if root is _MISSING else str(root),
+        action=None if action is _MISSING else str(action),
+        exit_code=None if exit_code is None else int(exit_code),
+    )
+
+
+def _assert_invocation_count(
+    result: Any,
+    matcher: CommandMatcher,
+    *,
+    times: int | None,
+    min: int | None,
+    max: int | None,
+    exit: ExitFilter,
+    assertion_name: str,
+) -> None:
     if times is not None and (min is not None or max is not None):
         raise ValueError("times cannot be combined with min or max")
     if exit not in {"success", "failure", "any"}:
@@ -141,48 +233,7 @@ def assert_command_ran(
     elif _count_satisfies(actual, times=times, min=min, max=max):
         return
 
-    raise AssertionError(_command_assertion_message(matcher, expected_lines, actual, commands))
-
-
-def spy(executable: str, *, source: str | None = None) -> CommandSpySpec:
-    """Create a static command spy declaration for pytest doki_factory."""
-
-    if not executable:
-        raise ValueError("executable is required")
-    resolved_source = executable if source is None else source
-    if not resolved_source:
-        raise ValueError("source must not be empty")
-    return CommandSpySpec(executable=executable, source=resolved_source)
-
-
-def normalize_invocation(invocation: Any) -> CommandInvocation:
-    if isinstance(invocation, CommandInvocation):
-        return invocation
-
-    executable = _field(invocation, "executable")
-    source = _field(invocation, "source")
-    root = _field(invocation, "root")
-    if executable is _MISSING:
-        executable = source if source is not _MISSING else root
-    if executable is _MISSING or executable is None or executable == "":
-        raise ValueError("command invocation must include executable, source, or root")
-
-    argv = _field(invocation, "argv")
-    if argv is _MISSING or argv is None:
-        argv = []
-
-    exit_code = _field(invocation, "exit_code")
-    if exit_code is _MISSING:
-        exit_code = None
-
-    return CommandInvocation(
-        executable=str(executable),
-        argv=[str(token) for token in argv],
-        raw=invocation,
-        source=None if source is _MISSING else str(source),
-        root=None if root is _MISSING else str(root),
-        exit_code=None if exit_code is None else int(exit_code),
-    )
+    raise AssertionError(_command_assertion_message(matcher, expected_lines, actual, commands, assertion_name))
 
 
 def _exit_matches(exit_code: int | None, exit_filter: ExitFilter) -> bool:
@@ -233,12 +284,13 @@ def _command_assertion_message(
     expected_lines: list[str],
     actual: int,
     commands: Sequence[CommandInvocation],
+    assertion_name: str = "command",
 ) -> str:
     lines = [
-        f"command assertion failed for {matcher.label}",
+        f"{assertion_name} assertion failed for {matcher.label}",
         *expected_lines,
         f"actual count {actual}",
-        "observed commands:",
+        f"observed {assertion_name}s:",
     ]
     if commands:
         lines.extend(f"- {_format_command(command)}" for command in commands)
@@ -361,6 +413,7 @@ __all__ = [
     "CommandMatcher",
     "CommandSpySpec",
     "assert_command_ran",
+    "assert_invoked",
     "match",
     "normalize_invocation",
     "spy",

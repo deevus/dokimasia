@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from dokimasia.core.model import AgentRunResult
-from dokimasia.pytest import DokiResult, assert_command_ran, cmd
+from dokimasia.pytest import DokiResult, assert_command_ran, assert_invoked, cmd
 
 
 TEA_ISSUE_CREATE = cmd.match("tea", pattern=[("issues", "issue"), "create"])
@@ -18,6 +18,62 @@ def result_with_commands(*commands):
 
 def command(executable: str, argv: list[str], exit_code: int):
     return {"executable": executable, "argv": argv, "exit_code": exit_code}
+
+
+def action(action_name: str, argv: list[str], exit_code: int):
+    return {"action": action_name, "argv": argv, "exit_code": exit_code, "source": "test-action"}
+
+
+def test_cmd_match_supports_action_invocation_records():
+    matcher = cmd.match("actions/issues/lock.py", pattern=["1", "spam"], mode="exact")
+
+    invocation = cmd.normalize_invocation(action("actions/issues/lock.py", ["1", "spam"], 0))
+
+    assert invocation.executable == "actions/issues/lock.py"
+    assert invocation.source == "test-action"
+    assert matcher.matches(invocation)
+
+
+def test_assert_invoked_matches_path_spy_and_file_spy_invocations():
+    lock_action = cmd.match("actions/issues/lock.py", pattern=["1", "spam"], mode="exact")
+    tea_create = cmd.match("tea", pattern=["issues", "create"], mode="exact")
+    result = result_with_commands(
+        command("tea", ["issues", "create"], 0),
+        action("actions/issues/lock.py", ["1", "spam"], 0),
+    )
+
+    assert_invoked(result, tea_create)
+    assert_invoked(result, lock_action)
+
+
+def test_assert_invoked_supports_count_constraints_and_exit_filters():
+    lock_action = cmd.match("actions/issues/lock.py", pattern=["1", "spam"], mode="exact")
+    result = result_with_commands(
+        action("actions/issues/lock.py", ["1", "spam"], 0),
+        action("actions/issues/lock.py", ["1", "spam"], 2),
+    )
+
+    assert_invoked(result, lock_action, times=1, exit="success")
+    assert_invoked(result, lock_action, times=1, exit="failure")
+    assert_invoked(result, lock_action, times=2, exit="any")
+
+    with pytest.raises(AssertionError, match="expected count == 1"):
+        assert_invoked(result, lock_action, times=1, exit="any")
+
+
+def test_assert_invoked_failure_message_lists_observed_invocations():
+    matcher = cmd.match("actions/issues/lock.py", pattern=["1", "spam"], mode="exact")
+    result = result_with_commands(command("tea", ["issues", "list"], 0))
+
+    with pytest.raises(AssertionError) as raised:
+        assert_invoked(result, matcher)
+
+    message = str(raised.value)
+    assert "invocation assertion failed for actions/issues/lock.py.1.spam" in message
+    assert "expected count >= 1" in message
+    assert "actual count 0" in message
+    assert "observed invocations:" in message
+    assert "tea issues list" in message
 
 
 def test_assert_command_ran_requires_a_successful_matching_command_by_default():
