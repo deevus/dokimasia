@@ -17,7 +17,7 @@ from dokimasia.agents.base import (
     resolve_extra_args,
     resolve_option,
 )
-from dokimasia.core.model import AgentRunResult, TraceEvent
+from dokimasia.core.model import AgentRunResult, McpCall, TraceEvent
 
 _SKILL_TEXT = re.compile(r"\bUsing\s+([A-Za-z0-9_-]+)\b")
 
@@ -70,6 +70,75 @@ def parse_claude_stream_json(lines: list[str]) -> list[TraceEvent]:
                         seen_skills.add(skill)
                         events.append(TraceEvent(kind="skill.loaded", name=skill, raw=raw))
     return events
+
+
+def parse_claude_mcp_calls(lines: list[str]) -> list[McpCall]:
+    tool_uses: list[dict[str, object]] = []
+    tool_results_by_id: dict[str, dict[str, object]] = {}
+
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(raw, dict):
+            continue
+
+        for content in _message_content(raw):
+            if content.get("type") == "tool_use":
+                parsed_name = _parse_claude_mcp_tool_name(content.get("name"))
+                if parsed_name is not None:
+                    tool_uses.append(content)
+            elif content.get("type") == "tool_result":
+                tool_use_id = content.get("tool_use_id")
+                if isinstance(tool_use_id, str):
+                    tool_results_by_id[tool_use_id] = content
+
+    calls: list[McpCall] = []
+    for sequence, tool_use in enumerate(tool_uses, start=1):
+        parsed_name = _parse_claude_mcp_tool_name(tool_use.get("name"))
+        if parsed_name is None:
+            continue
+        server, tool = parsed_name
+        arguments = tool_use.get("input", {})
+        if not isinstance(arguments, dict):
+            arguments = {}
+        tool_use_id = tool_use.get("id")
+        tool_result = tool_results_by_id.get(tool_use_id) if isinstance(tool_use_id, str) else None
+        calls.append(
+            McpCall(
+                server=server,
+                tool=tool,
+                arguments=dict(arguments),
+                result=None if tool_result is None else tool_result.get("content"),
+                sequence=sequence,
+                raw={"tool_use": tool_use, "tool_result": tool_result},
+            )
+        )
+    return calls
+
+
+def _message_content(raw: dict[str, object]) -> Iterable[dict[str, object]]:
+    message = raw.get("message")
+    if not isinstance(message, dict):
+        return
+    content_items = message.get("content", [])
+    if not isinstance(content_items, list):
+        return
+    for content in content_items:
+        if isinstance(content, dict):
+            yield content
+
+
+def _parse_claude_mcp_tool_name(name: object) -> tuple[str, str] | None:
+    if not isinstance(name, str):
+        return None
+    parts = name.split("__", 2)
+    if len(parts) != 3 or parts[0] != "mcp" or not parts[1] or not parts[2]:
+        return None
+    return parts[1], parts[2]
 
 
 class ClaudeCodeAdapter:
@@ -153,5 +222,6 @@ class ClaudeCodeAdapter:
             raw_trace_path=stdout_path,
             trace_events=parse_claude_stream_json(lines),
             duration_seconds=time.monotonic() - started,
+            mcp_calls=parse_claude_mcp_calls(lines),
             timed_out=timed_out,
         )
