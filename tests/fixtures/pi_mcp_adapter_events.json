@@ -1,0 +1,242 @@
+{
+  "proxy_call_with_decoded_args": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "args": {
+        "server": "doki-ledger",
+        "tool": "record_transaction",
+        "args": "{\"account\": \"travel\", \"amount_cents\": 4200}"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "result": {
+        "details": {
+          "mode": "call",
+          "server": "doki-ledger",
+          "tool": "record_transaction",
+          "mcpResult": {
+            "id": "txn-000001"
+          }
+        }
+      },
+      "isError": false
+    }
+  ],
+  "nested_session_message_proxy_call": [
+    {
+      "type": "message",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "toolCallId": "call-1",
+            "name": "mcp",
+            "arguments": {
+              "server": "doki-ledger",
+              "tool": "record_transaction",
+              "args": "{\"account\": \"travel\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "message",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "call-1",
+        "toolName": "mcp",
+        "details": {
+          "mode": "call",
+          "server": "doki-ledger",
+          "tool": "record_transaction",
+          "mcpResult": {
+            "id": "txn-000001"
+          }
+        }
+      }
+    }
+  ],
+  "deeply_nested_session_message_proxy_call": [
+    {
+      "type": "session-message",
+      "message": {
+        "type": "assistant",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "toolCall",
+              "toolCallId": "call-1",
+              "name": "mcp",
+              "arguments": {
+                "server": "doki-ledger",
+                "tool": "record_transaction",
+                "args": "{\"account\": \"travel\"}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "session-message",
+      "message": {
+        "type": "toolResult",
+        "message": {
+          "role": "toolResult",
+          "toolCallId": "call-1",
+          "toolName": "mcp",
+          "details": {
+            "mode": "call",
+            "server": "doki-ledger",
+            "tool": "record_transaction",
+            "mcpResult": {
+              "id": "txn-000001"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "malformed_proxy_args": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "args": {
+        "server": "doki-ledger",
+        "tool": "record_transaction",
+        "args": "not json"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "result": {
+        "details": {
+          "mode": "call",
+          "server": "doki-ledger",
+          "tool": "record_transaction",
+          "mcpResult": "ok"
+        }
+      }
+    }
+  ],
+  "direct_tool_success": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-1",
+      "toolName": "record_transaction",
+      "args": {
+        "account": "travel"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-1",
+      "toolName": "record_transaction",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "recorded txn-000001"
+          }
+        ],
+        "details": {
+          "server": "doki-ledger",
+          "tool": "record_transaction"
+        }
+      }
+    }
+  ],
+  "direct_tool_failure_without_tool_metadata": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-1",
+      "toolName": "record_transaction",
+      "args": {
+        "account": "travel"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-1",
+      "toolName": "record_transaction",
+      "result": {
+        "details": {
+          "server": "doki-ledger",
+          "error": "ledger write failed"
+        }
+      },
+      "isError": false
+    }
+  ],
+  "proxy_error": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "args": {
+        "server": "github",
+        "tool": "create_issue",
+        "args": "{}"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "result": {
+        "details": {
+          "mode": "call",
+          "server": "github",
+          "tool": "create_issue",
+          "error": "MCP server rejected the request"
+        }
+      },
+      "isError": false
+    }
+  ],
+  "discovery_and_non_mcp_tools": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "search-1",
+      "toolName": "mcp",
+      "args": {
+        "search": "docs"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "search-1",
+      "toolName": "mcp",
+      "result": {
+        "details": {
+          "mode": "search"
+        }
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "read-1",
+      "toolName": "read",
+      "args": {
+        "path": "README.md"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "read-1",
+      "toolName": "read",
+      "result": "content"
+    }
+  ]
+}
