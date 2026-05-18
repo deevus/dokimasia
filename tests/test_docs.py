@@ -5,6 +5,8 @@ from pathlib import Path
 
 README = Path(__file__).resolve().parents[1] / "README.md"
 
+MCP_ACCEPTANCE = Path(__file__).resolve().parents[1] / "docs" / "mcp-acceptance.md"
+
 
 def test_readme_documents_suite_authoring_namespace_and_modules():
     text = README.read_text(encoding="utf-8")
@@ -59,3 +61,31 @@ def test_readme_describes_pytest_first_authoring_surface():
     assert "tags" not in text
     assert "templating" not in text
     assert "state schemas" not in text
+
+
+def test_readme_links_mcp_acceptance_workflow_doc():
+    text = README.read_text(encoding="utf-8")
+
+    assert "MCP acceptance testing" in text
+    assert "docs/mcp-acceptance.md" in text
+
+
+def test_mcp_acceptance_doc_covers_required_workflow_topics():
+    text = MCP_ACCEPTANCE.read_text(encoding="utf-8")
+
+    for expected in [
+        "normalized MCP evidence",
+        "capability evidence",
+        "audited operation evidence",
+        "independent domain oracle",
+        "mcp__server__tool",
+        "Pi does not include MCP support out of the box",
+        "nicobailon/pi-mcp-adapter",
+        "proxy mode",
+        "direct-tool mode",
+        "proxy is optional",
+        "doki-ledger",
+        "DOKIMASIA_LIVE_MCP_E2E",
+        ".e2e-artifacts/<run-id>/",
+    ]:
+        assert expected in text
