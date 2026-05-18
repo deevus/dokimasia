@@ -29,6 +29,7 @@ where = ["src"]
 markers = [
   "agent_e2e: opt-in tests that run real agent CLIs",
   "mcp_e2e: opt-in tests that exercise live MCP tool use",
+  "skill_e2e: opt-in tests that exercise live helper skill use",
 ]
 
 [tool.ruff]
