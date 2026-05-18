@@ -220,7 +220,8 @@
       "toolName": "mcp",
       "result": {
         "details": {
-          "mode": "search"
+          "mode": "search",
+          "server": "docfork"
         }
       }
     },
@@ -237,6 +238,97 @@
       "toolCallId": "read-1",
       "toolName": "read",
       "result": "content"
+    }
+  ],
+  "unpaired_proxy_call": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "args": {
+        "server": "doki-ledger",
+        "tool": "record_transaction",
+        "args": "{\"account\":\"travel\"}"
+      }
+    }
+  ],
+  "proxy_top_level_is_error": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "args": {
+        "server": "github",
+        "tool": "create_issue",
+        "args": "{}"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "result": {
+        "details": {
+          "mode": "call",
+          "server": "github",
+          "tool": "create_issue"
+        }
+      },
+      "isError": true
+    }
+  ],
+  "proxy_nested_json_args": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "args": {
+        "server": "doki-ledger",
+        "tool": "record_transaction",
+        "args": "{\"payload\":\"{\\\"amount_cents\\\":4200}\"}"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "result": {
+        "details": {
+          "mode": "call",
+          "server": "doki-ledger",
+          "tool": "record_transaction",
+          "mcpResult": "ok"
+        }
+      }
+    }
+  ],
+  "unpaired_discovery_proxy_call": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "discovery-1",
+      "toolName": "mcp",
+      "args": {
+        "discovery": true
+      }
+    }
+  ],
+  "proxy_top_level_is_error_without_details": [
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "args": {
+        "server": "github",
+        "tool": "create_issue",
+        "args": "{}"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "call-1",
+      "toolName": "mcp",
+      "result": "permission denied",
+      "isError": true
     }
   ]
 }

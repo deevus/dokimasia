@@ -85,6 +85,7 @@ def test_claude_mcp_parser_pairs_successful_tool_result():
             arguments={"account": "travel", "amount_cents": 4200},
             result=[{"type": "text", "text": "recorded txn-1"}],
             sequence=1,
+            call_id="toolu_1",
             raw={
                 "tool_use": {
                     "type": "tool_use",
@@ -131,6 +132,50 @@ def test_claude_mcp_parser_preserves_call_without_result():
     assert calls[0].arguments == {"title": "Bug"}
     assert calls[0].result is None
     assert calls[0].raw["tool_result"] is None
+
+
+def test_claude_mcp_parser_classifies_error_tool_result_and_decodes_nested_arguments():
+    from dokimasia.agents.claude_code import parse_claude_mcp_calls
+
+    calls = parse_claude_mcp_calls(
+        [
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_1",
+                                "name": "mcp__github__create_issue",
+                                "input": {"payload": '{"title": "Bug"}'},
+                            }
+                        ]
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_1",
+                                "is_error": True,
+                                "content": [{"type": "text", "text": "permission denied"}],
+                            }
+                        ]
+                    },
+                }
+            ),
+        ]
+    )
+
+    assert len(calls) == 1
+    assert calls[0].arguments == {"payload": {"title": "Bug"}}
+    assert calls[0].error == "permission denied"
+    assert calls[0].is_error is True
 
 
 def test_claude_mcp_parser_ignores_non_mcp_tool_uses():
@@ -234,6 +279,7 @@ def test_pi_mcp_adapter_parser_normalizes_proxy_call_with_decoded_args():
             arguments={"account": "travel", "amount_cents": 4200},
             result={"id": "txn-000001"},
             sequence=1,
+            call_id="call-1",
             raw={"tool_call": events[0], "tool_result": events[1]},
         )
     ]
@@ -314,12 +360,71 @@ def test_pi_mcp_adapter_parser_treats_details_error_as_failure_evidence():
     assert calls[0].is_error is True
 
 
-def test_pi_mcp_adapter_parser_ignores_discovery_modes_and_non_mcp_tools():
+def test_pi_mcp_adapter_parser_treats_top_level_is_error_as_failure_evidence():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("proxy_top_level_is_error"))
+
+    assert len(calls) == 1
+    assert calls[0].error == "MCP operation failed"
+    assert calls[0].is_error is True
+
+
+def test_pi_mcp_adapter_parser_preserves_error_result_without_details():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("proxy_top_level_is_error_without_details"))
+
+    assert len(calls) == 1
+    assert calls[0].server == "github"
+    assert calls[0].tool == "create_issue"
+    assert calls[0].error == "MCP operation failed"
+    assert calls[0].result == "permission denied"
+    assert calls[0].raw["tool_result"] is not None
+
+
+def test_pi_mcp_adapter_parser_decodes_nested_proxy_json_arguments():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("proxy_nested_json_args"))
+
+    assert len(calls) == 1
+    assert calls[0].arguments == {"payload": {"amount_cents": 4200}}
+
+
+def test_pi_mcp_adapter_parser_preserves_unpaired_discovery_proxy_call():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("unpaired_discovery_proxy_call"))
+
+    assert len(calls) == 1
+    assert calls[0].mode == "discovery"
+    assert calls[0].tool == "discovery"
+    assert calls[0].result is None
+
+
+def test_pi_mcp_adapter_parser_represents_discovery_modes_separately_from_calls():
     from dokimasia.agents.pi import parse_pi_mcp_calls
 
     calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("discovery_and_non_mcp_tools"))
 
-    assert calls == []
+    assert len(calls) == 1
+    assert calls[0].server == "docfork"
+    assert calls[0].tool == "search"
+    assert calls[0].mode == "search"
+
+
+def test_pi_mcp_adapter_parser_preserves_unpaired_proxy_call_evidence():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("unpaired_proxy_call"))
+
+    assert len(calls) == 1
+    assert calls[0].server == "doki-ledger"
+    assert calls[0].tool == "record_transaction"
+    assert calls[0].arguments == {"account": "travel"}
+    assert calls[0].result is None
+    assert calls[0].raw["tool_result"] is None
 
 
 def test_pi_adapter_accepts_custom_mcp_normalizer(tmp_path):
