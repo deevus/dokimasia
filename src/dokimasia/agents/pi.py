@@ -4,9 +4,11 @@ import json
 import os
 import subprocess
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
+
+import jmespath
 
 from dokimasia.agents.base import (
     DOKIMASIA_EXTRA_ARGS_ENV_VAR,
@@ -16,7 +18,7 @@ from dokimasia.agents.base import (
     resolve_extra_args,
     resolve_option,
 )
-from dokimasia.core.model import AgentRunResult, TraceEvent
+from dokimasia.core.model import AgentRunResult, McpCall, TraceEvent
 
 
 def _decode_subprocess_output(output: str | bytes | None) -> str:
@@ -25,6 +27,11 @@ def _decode_subprocess_output(output: str | bytes | None) -> str:
     if isinstance(output, bytes):
         return output.decode("utf-8", errors="replace")
     return ""
+
+
+PiMcpNormalizer = Callable[[list[dict[str, Any]]], list[McpCall]]
+_PI_MCP_METADATA_KEYS = frozenset(("mode", "server", "tool", "mcpResult", "error"))
+_PI_MCP_RESULT_DETAILS_CANDIDATES = jmespath.compile("[details, result.details, result]")
 
 
 def _content_texts(content: Any) -> list[str]:
@@ -84,6 +91,229 @@ def parse_pi_json_events(lines: list[str], skills_dir: Path) -> list[TraceEvent]
     return events
 
 
+def parse_pi_mcp_calls(
+    lines: list[str],
+    normalizers: Sequence[PiMcpNormalizer] | None = None,
+) -> list[McpCall]:
+    events = _load_json_events(lines)
+    selected_normalizers = DEFAULT_PI_MCP_NORMALIZERS if normalizers is None else tuple(normalizers)
+    calls: list[McpCall] = []
+    for normalizer in selected_normalizers:
+        calls.extend(normalizer(events))
+    return calls
+
+
+def normalize_pi_mcp_adapter_calls(events: list[dict[str, Any]]) -> list[McpCall]:
+    """Normalize MCP call evidence emitted by nicobailon/pi-mcp-adapter."""
+
+    tool_calls_by_id: dict[str, dict[str, Any]] = {}
+    calls: list[McpCall] = []
+    for event in events:
+        tool_call_id = _tool_call_id(event)
+        if _is_tool_call_event(event) and tool_call_id is not None:
+            tool_calls_by_id[tool_call_id] = event
+            continue
+        if not _is_tool_result_event(event):
+            continue
+
+        tool_call = tool_calls_by_id.get(tool_call_id) if tool_call_id is not None else None
+        mcp_call = _normalize_pi_mcp_adapter_result(event, tool_call, sequence=len(calls) + 1)
+        if mcp_call is not None:
+            calls.append(mcp_call)
+    return calls
+
+
+DEFAULT_PI_MCP_NORMALIZERS: tuple[PiMcpNormalizer, ...] = (normalize_pi_mcp_adapter_calls,)
+
+
+def _load_json_events(lines: list[str]) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(raw, dict):
+            events.extend(_pi_mcp_candidate_events(raw))
+    return events
+
+
+def _pi_mcp_candidate_events(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    _collect_pi_mcp_candidate_events(raw, events)
+    return events
+
+
+def _collect_pi_mcp_candidate_events(raw: dict[str, Any], events: list[dict[str, Any]]) -> None:
+    """Collect Pi MCP evidence from flat events and known message envelopes.
+
+    Pi MCP evidence can be emitted as flat `tool_execution_*` JSON events, or
+    wrapped inside session-log/message envelopes. Some envelopes contain the
+    actual tool call at `message.content[]`; others add another layer such as
+    `message.message.content[]`.
+
+    Walk only the known Pi container fields recursively so the normalizer can
+    find `toolCall`/`toolResult` records without hard-coding one extension
+    envelope shape.
+    """
+    events.append(raw)
+
+    message = raw.get("message")
+    if isinstance(message, dict):
+        _collect_pi_mcp_candidate_events(message, events)
+
+    content = raw.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict):
+                _collect_pi_mcp_candidate_events(item, events)
+
+    tool_results = raw.get("toolResults")
+    if isinstance(tool_results, list):
+        for item in tool_results:
+            if isinstance(item, dict):
+                _collect_pi_mcp_candidate_events(item, events)
+
+
+def _normalize_pi_mcp_adapter_result(
+    tool_result: dict[str, Any],
+    tool_call: dict[str, Any] | None,
+    *,
+    sequence: int,
+) -> McpCall | None:
+    details = _pi_mcp_result_details(tool_result)
+    if details is None:
+        return None
+
+    mode = details.get("mode")
+    if mode is not None and mode != "call":
+        return None
+
+    server = _non_empty_string(details.get("server")) or _proxy_field(tool_call, "server")
+    tool = _non_empty_string(details.get("tool")) or _proxy_field(tool_call, "tool")
+    if tool is None and server is not None and _tool_name(tool_call) != "mcp":
+        tool = _tool_name(tool_call)
+    if server is None or tool is None:
+        return None
+
+    return McpCall(
+        server=server,
+        tool=tool,
+        arguments=_pi_mcp_arguments(tool_call),
+        result=_pi_mcp_result_payload(tool_result, details),
+        error=_normalized_error(details.get("error")),
+        sequence=sequence,
+        raw={"tool_call": tool_call, "tool_result": tool_result},
+    )
+
+
+def _is_tool_call_event(event: dict[str, Any]) -> bool:
+    return event.get("type") in {"tool_execution_start", "toolCall"}
+
+
+def _is_tool_result_event(event: dict[str, Any]) -> bool:
+    return event.get("type") == "tool_execution_end" or event.get("role") == "toolResult"
+
+
+def _tool_call_id(event: dict[str, Any]) -> str | None:
+    for key in ("toolCallId", "tool_call_id", "id"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _tool_name(event: dict[str, Any] | None) -> str | None:
+    if event is None:
+        return None
+    for key in ("toolName", "name"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _tool_arguments(event: dict[str, Any] | None) -> Any:
+    if event is None:
+        return {}
+    if "args" in event:
+        return event["args"]
+    return event.get("arguments", {})
+
+
+def _pi_mcp_result_details(tool_result: dict[str, Any]) -> dict[str, Any] | None:
+    for index, candidate in enumerate(_PI_MCP_RESULT_DETAILS_CANDIDATES.search(tool_result)):
+        if isinstance(candidate, dict) and (index < 2 or _PI_MCP_METADATA_KEYS.intersection(candidate)):
+            return candidate
+    return None
+
+
+def _pi_mcp_result_payload(tool_result: dict[str, Any], details: dict[str, Any]) -> Any:
+    if "mcpResult" in details:
+        return details["mcpResult"]
+
+    result = tool_result.get("result")
+    if isinstance(result, dict) and result.get("details") is details:
+        payload = {key: value for key, value in result.items() if key != "details"}
+        return payload or None
+    if "result" in tool_result:
+        return result
+    if "content" in tool_result:
+        return tool_result["content"]
+    return None
+
+
+def _proxy_field(tool_call: dict[str, Any] | None, field: str) -> str | None:
+    if _tool_name(tool_call) != "mcp":
+        return None
+    arguments = _tool_arguments(tool_call)
+    if not isinstance(arguments, dict):
+        return None
+    return _non_empty_string(arguments.get(field))
+
+
+def _pi_mcp_arguments(tool_call: dict[str, Any] | None) -> dict[str, Any]:
+    if tool_call is None:
+        return {}
+
+    arguments = _tool_arguments(tool_call)
+    if _tool_name(tool_call) == "mcp":
+        return _decode_proxy_mcp_args(arguments)
+    return dict(arguments) if isinstance(arguments, dict) else {}
+
+
+def _decode_proxy_mcp_args(arguments: Any) -> dict[str, Any]:
+    if not isinstance(arguments, dict):
+        return {}
+    mcp_args = arguments.get("args")
+    if isinstance(mcp_args, dict):
+        return dict(mcp_args)
+    if isinstance(mcp_args, str):
+        try:
+            decoded = json.loads(mcp_args)
+        except json.JSONDecodeError:
+            return {"args": mcp_args}
+        return dict(decoded) if isinstance(decoded, dict) else {"args": decoded}
+    if mcp_args is not None:
+        return {"args": mcp_args}
+    return {}
+
+
+def _non_empty_string(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _normalized_error(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return str(value)
+
+
 class PiAdapter:
     def __init__(
         self,
@@ -94,6 +324,7 @@ class PiAdapter:
         model: str | None = None,
         thinking: str | None = None,
         extra_args: Sequence[str] | None = None,
+        mcp_normalizers: Sequence[PiMcpNormalizer] | None = None,
     ):
         self.pi_bin = pi_bin
         self.skills_dir = skills_dir
@@ -102,6 +333,7 @@ class PiAdapter:
         self.thinking = thinking
         self.extra_args = tuple(extra_args or ())
         self._extra_args = extra_args
+        self.mcp_normalizers = DEFAULT_PI_MCP_NORMALIZERS if mcp_normalizers is None else tuple(mcp_normalizers)
 
     def run(
         self,
@@ -173,5 +405,6 @@ class PiAdapter:
             raw_trace_path=stdout_path,
             trace_events=parse_pi_json_events(stdout.splitlines(), self.skills_dir),
             duration_seconds=time.monotonic() - started,
+            mcp_calls=parse_pi_mcp_calls(stdout.splitlines(), self.mcp_normalizers),
             timed_out=timed_out,
         )

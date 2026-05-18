@@ -4,6 +4,17 @@ import json
 from pathlib import Path
 
 
+PI_MCP_ADAPTER_EVENTS = Path(__file__).parent / "fixtures" / "pi_mcp_adapter_events.json"
+
+
+def _pi_mcp_adapter_events(name: str) -> list[dict]:
+    return json.loads(PI_MCP_ADAPTER_EVENTS.read_text(encoding="utf-8"))[name]
+
+
+def _pi_mcp_adapter_jsonl(name: str) -> list[str]:
+    return [json.dumps(event) for event in _pi_mcp_adapter_events(name)]
+
+
 def test_claude_parser_extracts_plugin_qualified_skill_loaded():
     from dokimasia.agents.claude_code import parse_claude_stream_json
 
@@ -207,3 +218,165 @@ def test_pi_parser_extracts_skill_loaded_from_current_skill_read():
     )
 
     assert [event.name for event in events if event.kind == "skill.loaded"] == ["create-record"]
+
+
+def test_pi_mcp_adapter_parser_normalizes_proxy_call_with_decoded_args():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+    from dokimasia.core.model import McpCall
+
+    events = _pi_mcp_adapter_events("proxy_call_with_decoded_args")
+    calls = parse_pi_mcp_calls([json.dumps(event) for event in events])
+
+    assert calls == [
+        McpCall(
+            server="doki-ledger",
+            tool="record_transaction",
+            arguments={"account": "travel", "amount_cents": 4200},
+            result={"id": "txn-000001"},
+            sequence=1,
+            raw={"tool_call": events[0], "tool_result": events[1]},
+        )
+    ]
+
+
+def test_pi_mcp_adapter_parser_normalizes_nested_session_message_proxy_call():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("nested_session_message_proxy_call"))
+
+    assert len(calls) == 1
+    assert calls[0].server == "doki-ledger"
+    assert calls[0].tool == "record_transaction"
+    assert calls[0].arguments == {"account": "travel"}
+    assert calls[0].result == {"id": "txn-000001"}
+
+
+def test_pi_mcp_adapter_parser_normalizes_deeply_nested_session_message_proxy_call():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("deeply_nested_session_message_proxy_call"))
+
+    assert len(calls) == 1
+    assert calls[0].server == "doki-ledger"
+    assert calls[0].tool == "record_transaction"
+    assert calls[0].arguments == {"account": "travel"}
+    assert calls[0].result == {"id": "txn-000001"}
+
+
+def test_pi_mcp_adapter_parser_preserves_malformed_proxy_args_without_failing():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("malformed_proxy_args"))
+
+    assert len(calls) == 1
+    assert calls[0].arguments == {"args": "not json"}
+
+
+def test_pi_mcp_adapter_parser_uses_direct_tool_metadata_not_tool_name_prefix():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("direct_tool_success"))
+
+    assert len(calls) == 1
+    assert calls[0].server == "doki-ledger"
+    assert calls[0].tool == "record_transaction"
+    assert calls[0].arguments == {"account": "travel"}
+    assert calls[0].result == {"content": [{"type": "text", "text": "recorded txn-000001"}]}
+
+
+def test_pi_mcp_adapter_parser_records_direct_tool_failure_when_error_metadata_identifies_server():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("direct_tool_failure_without_tool_metadata"))
+
+    assert len(calls) == 1
+    assert calls[0].server == "doki-ledger"
+    assert calls[0].tool == "record_transaction"
+    assert calls[0].error == "ledger write failed"
+
+
+def test_pi_mcp_adapter_parser_preserves_direct_tool_outer_result_payload():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("direct_tool_success"))
+
+    assert len(calls) == 1
+    assert calls[0].result == {"content": [{"type": "text", "text": "recorded txn-000001"}]}
+
+
+def test_pi_mcp_adapter_parser_treats_details_error_as_failure_evidence():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("proxy_error"))
+
+    assert len(calls) == 1
+    assert calls[0].error == "MCP server rejected the request"
+    assert calls[0].is_error is True
+
+
+def test_pi_mcp_adapter_parser_ignores_discovery_modes_and_non_mcp_tools():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    calls = parse_pi_mcp_calls(_pi_mcp_adapter_jsonl("discovery_and_non_mcp_tools"))
+
+    assert calls == []
+
+
+def test_pi_adapter_accepts_custom_mcp_normalizer(tmp_path):
+    from dokimasia.agents.pi import PiAdapter
+    from dokimasia.core.model import McpCall
+
+    pi_bin = tmp_path / "pi"
+    pi_bin.write_text(
+        f"#!{__import__('sys').executable}\n"
+        "import json\n"
+        "print(json.dumps({'type': 'custom_mcp_evidence', 'server': 'custom', 'tool': 'ping'}))\n",
+        encoding="utf-8",
+    )
+    pi_bin.chmod(0o755)
+
+    def custom_normalizer(events):
+        return [
+            McpCall(server=event["server"], tool=event["tool"], sequence=index)
+            for index, event in enumerate(events, start=1)
+            if event.get("type") == "custom_mcp_evidence"
+        ]
+
+    result = PiAdapter(pi_bin=str(pi_bin), skills_dir=tmp_path, mcp_normalizers=[custom_normalizer]).run(
+        "ping",
+        workspace=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        env={},
+        timeout_seconds=5,
+    )
+
+    assert result.mcp_calls == [McpCall(server="custom", tool="ping", sequence=1)]
+
+
+def test_pi_adapter_returns_default_pi_mcp_adapter_calls(tmp_path):
+    from dokimasia.agents.pi import PiAdapter
+
+    pi_bin = tmp_path / "pi"
+    events = repr(_pi_mcp_adapter_events("proxy_call_with_decoded_args"))
+    pi_bin.write_text(
+        f"#!{__import__('sys').executable}\n"
+        "import json\n"
+        f"events = {events}\n"
+        "for event in events:\n"
+        "    print(json.dumps(event))\n",
+        encoding="utf-8",
+    )
+    pi_bin.chmod(0o755)
+
+    result = PiAdapter(pi_bin=str(pi_bin), skills_dir=tmp_path).run(
+        "record it",
+        workspace=tmp_path,
+        artifact_dir=tmp_path / "artifacts",
+        env={},
+        timeout_seconds=5,
+    )
+
+    assert len(result.mcp_calls) == 1
+    assert result.mcp_calls[0].server == "doki-ledger"
+    assert result.mcp_calls[0].tool == "record_transaction"
+    assert result.mcp_calls[0].arguments == {"account": "travel", "amount_cents": 4200}
