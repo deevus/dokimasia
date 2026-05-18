@@ -16,7 +16,7 @@ It also exposes read-only oracle helpers through MCP:
 
 Acceptance tests should verify business state by reading the pytest-controlled
 JSON state file with `dokimasia.examples.doki_ledger.read_entries()` or
-`balance_cents()`. Later MCP evidence tests can separately assert that an agent
+`balance_cents()`. MCP evidence tests should separately assert that an agent
 called the MCP tool.
 
 ## MCP config fragment
@@ -52,6 +52,16 @@ record_transaction(state_path, account="supplies", amount_cents=4200, memo="pape
 assert balance_cents(state_path, "supplies") == 4200
 ```
 
-No live-agent test is included here. Future live-agent examples should be marked
-opt-in, for example with `pytest.mark.agent_e2e`, so normal CI remains local and
-deterministic.
+## Live-agent E2E use
+
+The live MCP E2E tests are opt-in and live under `tests/e2e/` so normal CI
+remains local and deterministic. They run a real agent against `doki-ledger`,
+assert normalized MCP evidence, and verify the final JSON state file as an
+independent oracle.
+
+```bash
+DOKIMASIA_LIVE_MCP_E2E=1 uv run pytest tests/e2e -rs
+DOKIMASIA_LIVE_MCP_E2E=1 DOKIMASIA_LIVE_MCP_E2E_ARTIFACT_DIR=/tmp/dokimasia-ledger-mcp uv run pytest tests/e2e -rs
+```
+
+See `tests/e2e/README.md` for adapter selection and local configuration.
