@@ -25,6 +25,21 @@ class AuditEvent:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class McpCall:
+    server: str
+    tool: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+    result: Any = None
+    error: Any = None
+    order: int | None = None
+    raw: Any = field(default_factory=dict)
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
 @dataclass
 class AgentRunResult:
     exit_code: int
@@ -35,3 +50,4 @@ class AgentRunResult:
     duration_seconds: float
     timed_out: bool = False
     commands: list[Any] = field(default_factory=list)
+    mcp_calls: list[Any] = field(default_factory=list)

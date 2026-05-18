@@ -158,6 +158,27 @@ def test_issue_flow(doki_factory):
 
 Invocation evidence proves that an approved executable path was used. It is not a substitute for independent domain-state verification. A good end-to-end test still asserts the resulting issue, ticket, cloud resource, or other business state through an oracle outside the agent's trace and stdout.
 
+## MCP evidence assertions
+
+Adapters can attach normalized MCP evidence to `AgentRunResult.mcp_calls`. Each call identifies the MCP `server`, `tool`, structured `arguments`, optional `result` or `error`, an optional `order`, and the original `raw` evidence. Dokimasia exposes those calls on `result.mcp_calls`.
+
+Use `dokimasia.pytest.mcp` to define static matchers for MCP calls and `assert_mcp_call(result, matcher)` to assert that a run made an expected call:
+
+```python
+from dokimasia.pytest import assert_mcp_call, mcp
+
+CREATE_ISSUE = mcp.match(
+    server="github",
+    tool="create_issue",
+    arguments={"repo": "dokimasia"},
+)
+
+assert_mcp_call(result, CREATE_ISSUE)
+assert_mcp_call(result, mcp.match(server="github", ok=False), max=0)
+```
+
+`arguments=` matches the provided subset of structured arguments. Use `where=` for custom predicates and keyword-only `times=`, `min=`, and `max=` for count constraints.
+
 ## File spies for action scripts
 
 Use file spies when the executable under test is a repo-relative action script rather than a host command discovered through `PATH`. The suite replaces the action file in the disposable test workspace with a wrapper. The wrapper forwards to the real project-owned script, records a JSONL event through `DOKIMASIA_COMMAND_LOG`, and preserves the real script's exit code. Production action scripts do not import Dokimasia; only the test workspace wrapper depends on Dokimasia's generated instrumentation.

@@ -13,8 +13,8 @@ import pytest
 from dokimasia.agents.claude_code import ClaudeCodeAdapter
 from dokimasia.agents.pi import PiAdapter
 
-from dokimasia.core.model import AgentRunResult, TraceEvent
-from dokimasia.pytest import cmd
+from dokimasia.core.model import AgentRunResult, McpCall, TraceEvent
+from dokimasia.pytest import cmd, mcp
 from dokimasia.suite import create_file_spy, create_node_file_spy, create_shell_file_spy
 
 
@@ -217,6 +217,33 @@ def test_doki_run_preserves_adapter_commands_when_no_spies_are_registered(doki_f
     assert (result.artifact_dir / "commands.jsonl").exists()
     assert [command.executable for command in result.commands] == ["adapter"]
     assert [command.argv for command in result.commands] == [["one"]]
+
+
+def test_doki_run_preserves_adapter_mcp_calls(doki_factory, tmp_path):
+    class McpAdapter(FakeAdapter):
+        def run(self, prompt, workspace, artifact_dir, env, timeout_seconds):
+            result = super().run(prompt, workspace, artifact_dir, env, timeout_seconds)
+            result.mcp_calls = [
+                McpCall(
+                    server="github",
+                    tool="create_issue",
+                    arguments={"repo": "dokimasia"},
+                    result={"number": 33},
+                    order=1,
+                    raw={"source": "fake-adapter"},
+                )
+            ]
+            return result
+
+    result = doki_factory(
+        agent=McpAdapter(),
+        workspace=tmp_path / "workspace",
+        artifact_dir=tmp_path / "artifacts",
+    ).run("adapter MCP calls")
+
+    assert result.mcp_calls[0].server == "github"
+    assert result.mcp_calls[0].tool == "create_issue"
+    mcp.assert_mcp_call(result, mcp.match(server="github", tool="create_issue", arguments={"repo": "dokimasia"}))
 
 
 def test_doki_run_loads_command_log_events_without_registered_path_spies(doki_factory, tmp_path):
