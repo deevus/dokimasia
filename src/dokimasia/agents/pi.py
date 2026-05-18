@@ -117,6 +117,8 @@ def normalize_pi_mcp_adapter_calls(events: list[dict[str, Any]]) -> list[McpCall
             continue
         if not _is_tool_result_event(event):
             continue
+        if tool_call_id is not None and tool_call_id in paired_tool_call_ids:
+            continue
 
         tool_call = tool_calls_by_id.get(tool_call_id) if tool_call_id is not None else None
         mcp_call = _normalize_pi_mcp_adapter_result(event, tool_call, sequence=len(calls) + 1)

@@ -25,6 +25,12 @@ doki-ledger = "dokimasia.examples.doki_ledger.server:main"
 where = ["src"]
 
 
+[tool.pytest.ini_options]
+markers = [
+  "agent_e2e: opt-in tests that run real agent CLIs",
+  "mcp_e2e: opt-in tests that exercise live MCP tool use",
+]
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"

@@ -285,6 +285,18 @@ def test_pi_mcp_adapter_parser_normalizes_proxy_call_with_decoded_args():
     ]
 
 
+def test_pi_mcp_adapter_parser_deduplicates_repeated_result_evidence():
+    from dokimasia.agents.pi import parse_pi_mcp_calls
+
+    events = _pi_mcp_adapter_events("proxy_call_with_decoded_args")
+    lines = [json.dumps(event) for event in [*events, events[1], events[1]]]
+
+    calls = parse_pi_mcp_calls(lines)
+
+    assert len(calls) == 1
+    assert calls[0].call_id == "call-1"
+
+
 def test_pi_mcp_adapter_parser_normalizes_nested_session_message_proxy_call():
     from dokimasia.agents.pi import parse_pi_mcp_calls
 
