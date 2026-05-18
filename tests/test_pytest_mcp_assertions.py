@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from dokimasia.core.model import AgentRunResult, McpCall
-from dokimasia.pytest import DokiResult, assert_mcp_called
+from dokimasia.pytest import DokiResult, assert_mcp_called, assert_mcp_not_called, normalize_mcp_call
 
 
 class FakeMcpAdapter:
@@ -111,6 +111,39 @@ def test_normalized_mcp_call_derives_error_state_from_trimmed_error():
     assert succeeded.is_error is False
 
 
+def test_normalize_mcp_call_decodes_nested_json_string_arguments_and_preserves_raw():
+    raw = {
+        "server": "doki-ledger",
+        "tool": "record_transaction",
+        "arguments": {
+            "account": "travel",
+            "payload": '{"amount_cents": 4200, "tags": ["flight"]}',
+        },
+    }
+
+    call = normalize_mcp_call(raw)
+
+    assert call.arguments == {
+        "account": "travel",
+        "payload": {"amount_cents": 4200, "tags": ["flight"]},
+    }
+    assert call.raw is raw
+
+
+def test_normalize_mcp_call_classifies_generic_is_error_metadata():
+    call = normalize_mcp_call({"server": "github", "tool": "create_issue", "is_error": True})
+
+    assert call.error == "MCP operation failed"
+    assert call.is_error is True
+
+
+def test_normalize_mcp_call_classifies_camel_case_is_error_metadata():
+    call = normalize_mcp_call({"server": "github", "tool": "create_issue", "isError": True})
+
+    assert call.error == "MCP operation failed"
+    assert call.is_error is True
+
+
 def test_assert_mcp_called_verifies_matching_call():
     result = type(
         "Result",
@@ -173,3 +206,66 @@ def test_assert_mcp_called_failure_lists_observed_calls():
     assert "MCP call assertion failed for github.create_issue" in message
     assert "observed MCP calls:" in message
     assert "doki-ledger.record_transaction" in message
+
+
+def test_assert_mcp_called_filters_by_mode_success_and_predicate():
+    result = type(
+        "Result",
+        (),
+        {
+            "mcp_calls": [
+                McpCall(server="doki-ledger", tool="record_transaction", arguments={"account": "travel"}, mode="call"),
+                McpCall(server="doki-ledger", tool="record_transaction", mode="call", error="write failed"),
+                McpCall(server="doki-ledger", tool="search", mode="search"),
+            ]
+        },
+    )()
+
+    assert_mcp_called(
+        result,
+        server="doki-ledger",
+        tool="record_transaction",
+        success=True,
+        where=lambda call: call.arguments.get("account") == "travel",
+        times=1,
+    )
+    assert_mcp_called(result, server="doki-ledger", tool="record_transaction", success=False, times=1)
+    assert_mcp_called(result, mode="search", times=1)
+
+
+def test_assert_mcp_called_defaults_to_call_mode_so_discovery_does_not_satisfy_tool_call_assertions():
+    result = type("Result", (), {"mcp_calls": [McpCall(server="doki-ledger", tool="search", mode="search")]})()
+
+    assert_mcp_not_called(result, server="doki-ledger", tool="search")
+
+    with pytest.raises(AssertionError) as raised:
+        assert_mcp_called(result, server="doki-ledger", tool="search")
+
+    assert "mode=search" in str(raised.value)
+
+
+def test_assert_mcp_called_failure_message_includes_arguments_modes_and_errors():
+    result = type(
+        "Result",
+        (),
+        {
+            "mcp_calls": [
+                McpCall(
+                    server="doki-ledger",
+                    tool="record_transaction",
+                    arguments={"account": "travel"},
+                    mode="call",
+                    error="write failed",
+                    sequence=1,
+                )
+            ]
+        },
+    )()
+
+    with pytest.raises(AssertionError) as raised:
+        assert_mcp_called(result, server="github", tool="create_issue")
+
+    message = str(raised.value)
+    assert "#1 doki-ledger.record_transaction mode=call (error)" in message
+    assert "arguments={'account': 'travel'}" in message
+    assert "error='write failed'" in message

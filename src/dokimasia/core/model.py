@@ -27,14 +27,16 @@ class AuditEvent:
 
 @dataclass(frozen=True)
 class McpCall:
-    """Normalized MCP tool call evidence emitted by an agent adapter."""
+    """Normalized MCP operation evidence emitted by an agent adapter."""
 
-    server: str
-    tool: str
+    server: str | None = None
+    tool: str | None = None
+    mode: str = "call"
     arguments: dict[str, Any] = field(default_factory=dict)
     result: Any = None
     error: str | None = None
     sequence: int | None = None
+    call_id: str | None = None
     raw: Any = field(default_factory=dict)
 
     @property

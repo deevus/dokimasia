@@ -18,6 +18,7 @@ from dokimasia.agents.base import (
     resolve_option,
 )
 from dokimasia.core.model import AgentRunResult, McpCall, TraceEvent
+from dokimasia.core.json import decode_nested_json_strings
 
 _SKILL_TEXT = re.compile(r"\bUsing\s+([A-Za-z0-9_-]+)\b")
 
@@ -111,13 +112,41 @@ def parse_claude_mcp_calls(lines: list[str]) -> list[McpCall]:
             McpCall(
                 server=server,
                 tool=tool,
-                arguments=dict(arguments),
+                mode="call",
+                arguments=decode_nested_json_strings(arguments),
                 result=None if tool_result is None else tool_result.get("content"),
+                error=_claude_mcp_result_error(tool_result),
                 sequence=sequence,
+                call_id=tool_use_id if isinstance(tool_use_id, str) else None,
                 raw={"tool_use": tool_use, "tool_result": tool_result},
             )
         )
     return calls
+
+
+def _claude_mcp_result_error(tool_result: dict[str, object] | None) -> str | None:
+    if tool_result is None or tool_result.get("is_error") is not True:
+        return None
+    return _claude_tool_result_text(tool_result.get("content")) or "MCP operation failed"
+
+
+def _claude_tool_result_text(content: object) -> str | None:
+    if isinstance(content, str):
+        return content.strip() or None
+    if not isinstance(content, list):
+        return None
+
+    text = "\n".join(_text_blocks(content))
+    return text or None
+
+
+def _text_blocks(content: list[object]) -> Iterable[str]:
+    for item in content:
+        if not isinstance(item, dict) or not isinstance(item.get("text"), str):
+            continue
+        text = item["text"].strip()
+        if text:
+            yield text
 
 
 def _message_content(raw: dict[str, object]) -> Iterable[dict[str, object]]:

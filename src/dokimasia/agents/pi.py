@@ -19,6 +19,7 @@ from dokimasia.agents.base import (
     resolve_option,
 )
 from dokimasia.core.model import AgentRunResult, McpCall, TraceEvent
+from dokimasia.core.json import decode_nested_json_strings
 
 
 def _decode_subprocess_output(output: str | bytes | None) -> str:
@@ -104,9 +105,10 @@ def parse_pi_mcp_calls(
 
 
 def normalize_pi_mcp_adapter_calls(events: list[dict[str, Any]]) -> list[McpCall]:
-    """Normalize MCP call evidence emitted by nicobailon/pi-mcp-adapter."""
+    """Normalize MCP operation evidence emitted by nicobailon/pi-mcp-adapter."""
 
     tool_calls_by_id: dict[str, dict[str, Any]] = {}
+    paired_tool_call_ids: set[str] = set()
     calls: list[McpCall] = []
     for event in events:
         tool_call_id = _tool_call_id(event)
@@ -118,6 +120,15 @@ def normalize_pi_mcp_adapter_calls(events: list[dict[str, Any]]) -> list[McpCall
 
         tool_call = tool_calls_by_id.get(tool_call_id) if tool_call_id is not None else None
         mcp_call = _normalize_pi_mcp_adapter_result(event, tool_call, sequence=len(calls) + 1)
+        if mcp_call is not None:
+            calls.append(mcp_call)
+            if tool_call_id is not None:
+                paired_tool_call_ids.add(tool_call_id)
+
+    for tool_call_id, tool_call in tool_calls_by_id.items():
+        if tool_call_id in paired_tool_call_ids:
+            continue
+        mcp_call = _normalize_unpaired_pi_mcp_adapter_tool_call(tool_call, sequence=len(calls) + 1)
         if mcp_call is not None:
             calls.append(mcp_call)
     return calls
@@ -185,27 +196,104 @@ def _normalize_pi_mcp_adapter_result(
 ) -> McpCall | None:
     details = _pi_mcp_result_details(tool_result)
     if details is None:
-        return None
+        return _normalize_pi_mcp_adapter_result_without_details(tool_result, tool_call, sequence=sequence)
 
-    mode = details.get("mode")
-    if mode is not None and mode != "call":
-        return None
+    mode = _non_empty_string(details.get("mode"))
+    if mode is None:
+        mode = _proxy_mode(tool_call)
+    if mode is None:
+        mode = "call"
 
-    server = _non_empty_string(details.get("server")) or _proxy_field(tool_call, "server")
-    tool = _non_empty_string(details.get("tool")) or _proxy_field(tool_call, "tool")
+    server = _non_empty_string(details.get("server"))
+    if server is None:
+        server = _proxy_field(tool_call, "server")
+
+    tool = _non_empty_string(details.get("tool"))
+    if tool is None:
+        tool = _proxy_field(tool_call, "tool")
+    if tool is None:
+        tool = _proxy_operation(tool_call, mode)
     if tool is None and server is not None and _tool_name(tool_call) != "mcp":
         tool = _tool_name(tool_call)
-    if server is None or tool is None:
+
+    if mode == "call" and (server is None or tool is None):
+        return None
+    if mode != "call" and tool is None:
         return None
 
     return McpCall(
         server=server,
         tool=tool,
+        mode=mode,
         arguments=_pi_mcp_arguments(tool_call),
         result=_pi_mcp_result_payload(tool_result, details),
-        error=_normalized_error(details.get("error")),
+        error=_normalized_error(details.get("error")) or _pi_tool_result_error(tool_result),
         sequence=sequence,
+        call_id=_tool_call_id(tool_result) or _tool_call_id(tool_call or {}),
         raw={"tool_call": tool_call, "tool_result": tool_result},
+    )
+
+
+def _normalize_pi_mcp_adapter_result_without_details(
+    tool_result: dict[str, Any],
+    tool_call: dict[str, Any] | None,
+    *,
+    sequence: int,
+) -> McpCall | None:
+    mode = _proxy_mode(tool_call)
+    if mode is None:
+        mode = "call"
+
+    server = _proxy_field(tool_call, "server")
+    tool = _proxy_field(tool_call, "tool")
+    if tool is None:
+        tool = _proxy_operation(tool_call, mode)
+
+    if mode == "call" and (server is None or tool is None):
+        return None
+    if mode != "call" and tool is None:
+        return None
+
+    return McpCall(
+        server=server,
+        tool=tool,
+        mode=mode,
+        arguments=_pi_mcp_arguments(tool_call),
+        result=_pi_mcp_result_payload_without_details(tool_result),
+        error=_pi_tool_result_error(tool_result),
+        sequence=sequence,
+        call_id=_tool_call_id(tool_result) or _tool_call_id(tool_call or {}),
+        raw={"tool_call": tool_call, "tool_result": tool_result},
+    )
+
+
+def _normalize_unpaired_pi_mcp_adapter_tool_call(tool_call: dict[str, Any], *, sequence: int) -> McpCall | None:
+    if _tool_name(tool_call) != "mcp":
+        return None
+
+    mode = _proxy_mode(tool_call)
+    if mode is None:
+        mode = "call"
+
+    server = _proxy_field(tool_call, "server")
+    tool = _proxy_field(tool_call, "tool")
+    if tool is None:
+        tool = _proxy_operation(tool_call, mode)
+
+    if mode == "call" and (server is None or tool is None):
+        return None
+    if mode != "call" and tool is None:
+        return None
+
+    return McpCall(
+        server=server,
+        tool=tool,
+        mode=mode,
+        arguments=_pi_mcp_arguments(tool_call),
+        result=None,
+        sequence=sequence,
+        call_id=_tool_call_id(tool_call),
+        raw={"tool_call": tool_call, "tool_result": None},
     )
 
 
@@ -265,6 +353,14 @@ def _pi_mcp_result_payload(tool_result: dict[str, Any], details: dict[str, Any])
     return None
 
 
+def _pi_mcp_result_payload_without_details(tool_result: dict[str, Any]) -> Any:
+    if "result" in tool_result:
+        return tool_result["result"]
+    if "content" in tool_result:
+        return tool_result["content"]
+    return None
+
+
 def _proxy_field(tool_call: dict[str, Any] | None, field: str) -> str | None:
     if _tool_name(tool_call) != "mcp":
         return None
@@ -272,6 +368,29 @@ def _proxy_field(tool_call: dict[str, Any] | None, field: str) -> str | None:
     if not isinstance(arguments, dict):
         return None
     return _non_empty_string(arguments.get(field))
+
+
+def _proxy_mode(tool_call: dict[str, Any] | None) -> str | None:
+    if _tool_name(tool_call) != "mcp":
+        return None
+    arguments = _tool_arguments(tool_call)
+    if not isinstance(arguments, dict):
+        return None
+    if _non_empty_string(arguments.get("tool")) is not None:
+        return "call"
+    return _proxy_operation(tool_call, None)
+
+
+def _proxy_operation(tool_call: dict[str, Any] | None, mode: str | None) -> str | None:
+    if _tool_name(tool_call) != "mcp":
+        return None
+    arguments = _tool_arguments(tool_call)
+    if not isinstance(arguments, dict):
+        return None
+    for candidate in (mode, "connect", "describe", "search", "list", "status", "discovery"):
+        if candidate and candidate in arguments:
+            return candidate
+    return None
 
 
 def _pi_mcp_arguments(tool_call: dict[str, Any] | None) -> dict[str, Any]:
@@ -295,10 +414,17 @@ def _decode_proxy_mcp_args(arguments: Any) -> dict[str, Any]:
             decoded = json.loads(mcp_args)
         except json.JSONDecodeError:
             return {"args": mcp_args}
+        decoded = decode_nested_json_strings(decoded)
         return dict(decoded) if isinstance(decoded, dict) else {"args": decoded}
     if mcp_args is not None:
         return {"args": mcp_args}
     return {}
+
+
+def _pi_tool_result_error(tool_result: dict[str, Any]) -> str | None:
+    if tool_result.get("isError") is True or tool_result.get("is_error") is True:
+        return "MCP operation failed"
+    return None
 
 
 def _non_empty_string(value: Any) -> str | None:
