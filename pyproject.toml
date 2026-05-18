@@ -17,6 +17,9 @@ dependencies = [
 [project.entry-points.pytest11]
 dokimasia = "dokimasia.pytest"
 
+[project.scripts]
+doki-ledger = "dokimasia.examples.doki_ledger.server:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

@@ -235,6 +235,11 @@ def test_agent_locks_issue_with_shell_action(doki_factory, workspace_repo, real_
 
 The recorded event includes normalized fields such as `action`, `argv`, `cwd`, `pid`, `phase`, `source`, `exit_code`, and `timestamp`. `Doki.run(...)` loads those events into the returned result, so assertions use `assert_invoked(result, LOCK_ACTION)` directly rather than reading audit files in the test.
 
+## Examples
+
+`doki-ledger` is a local stateful MCP server example for acceptance suites that need a deterministic MCP mutation target. It exposes a `record_transaction` tool, persists ledger entries to a pytest-controlled JSON file, and provides Python oracle helpers such as `balance_cents()` and `read_entries()` so tests can verify final state without trusting an agent trace. See `examples/doki-ledger/README.md`.
+
+
 ## Suite authoring helpers
 
 The `dokimasia.suite` namespace contains generic suite assembly helpers. These helpers cover common mechanics that many end-to-end suites need while staying independent of any product, service, CLI, issue tracker, or project workflow.
