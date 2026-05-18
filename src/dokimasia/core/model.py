@@ -25,6 +25,23 @@ class AuditEvent:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class McpCall:
+    """Normalized MCP tool call evidence emitted by an agent adapter."""
+
+    server: str
+    tool: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+    result: Any = None
+    error: str | None = None
+    sequence: int | None = None
+    raw: Any = field(default_factory=dict)
+
+    @property
+    def is_error(self) -> bool:
+        return self.error is not None
+
+
 @dataclass
 class AgentRunResult:
     exit_code: int
@@ -35,3 +52,5 @@ class AgentRunResult:
     duration_seconds: float
     timed_out: bool = False
     commands: list[Any] = field(default_factory=list)
+
+    mcp_calls: list[Any] = field(default_factory=list)

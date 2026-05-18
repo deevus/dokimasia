@@ -13,7 +13,8 @@ from slugify import slugify
 
 from dokimasia.agents.claude_code import ClaudeCodeAdapter
 from dokimasia.agents.pi import PiAdapter
-from dokimasia.core.model import AgentRunResult, TraceEvent
+from dokimasia.core.model import AgentRunResult, McpCall, TraceEvent
+from dokimasia.pytest.mcp import normalize_mcp_call
 from .cmd import CommandInvocation, CommandSpySpec, normalize_invocation
 from dokimasia.suite.env import env_with_path_prepend, require_executable
 from dokimasia.suite.spy import CommandSpy, create_spy
@@ -98,6 +99,8 @@ class DokiResult:
     duration_seconds: float
     commands: list[CommandInvocation] = field(default_factory=list)
 
+    mcp_calls: list[McpCall] = field(default_factory=list)
+
     @classmethod
     def from_agent_result(
         cls,
@@ -106,6 +109,8 @@ class DokiResult:
         command_log_path: Path | None = None,
     ) -> "DokiResult":
         adapter_commands = [normalize_invocation(command) for command in getattr(agent_result, "commands", [])]
+
+        mcp_calls = [normalize_mcp_call(call) for call in getattr(agent_result, "mcp_calls", [])]
         if command_log_path is None:
             commands = adapter_commands
         else:
@@ -121,6 +126,7 @@ class DokiResult:
             trace_events=agent_result.trace_events,
             duration_seconds=agent_result.duration_seconds,
             commands=commands,
+            mcp_calls=mcp_calls,
         )
 
     @property
