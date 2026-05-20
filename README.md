@@ -283,6 +283,33 @@ The recorded event includes normalized fields such as `action`, `argv`, `cwd`, `
 
 ## Examples
 
+### Real-world suites
+
+- [`tea-skills`](https://github.com/deevus/tea-skills) uses Dokimasia to test Pi skills for Forgejo/Gitea workflows. The suite runs Pi against real skill files in a mocked repository, wraps the `tea` CLI and bundled action scripts as audited invocations, and verifies the final issue/dependency/lock state with project-owned oracles. See [`tests/e2e/test_agent_e2e.py`](https://github.com/deevus/tea-skills/blob/main/tests/e2e/test_agent_e2e.py).
+
+  ```python
+  result = doki.run('Create a Forgejo issue titled "..."')
+
+  assert result.ok, result.failure_summary
+  assert result.has_skill_loaded("create-issue")
+  assert_invoked(result, ISSUE_CREATE, times=1)
+  assert_single_issue_matches(mock_tea.load_state()["issues"], title=title, body=body)
+  ```
+
+- [`pi-wayfinder`](https://github.com/deevus/pi-wayfinder) uses Dokimasia to test agent tool choice. The suite gives Pi a small source file and asserts that it uses Wayfinder's structured navigation tools before falling back to broad file reads. See [`tests/agent/test_wayfinder_tool_choice.py`](https://github.com/deevus/pi-wayfinder/blob/main/tests/agent/test_wayfinder_tool_choice.py).
+
+  ```python
+  result = doki.run(
+      "Explore src/checkout.ts and explain how finalizeCheckout computes its result."
+  )
+
+  assert result.ok, result.failure_summary
+  assert_tool_called(result, tool="get_file_skeleton", where=_targets_checkout_source)
+  assert_tool_called(result, tool="get_function", where=_targets_finalize_checkout)
+  ```
+
+### Deterministic MCP fixture
+
 `doki-ledger` is a local stateful MCP server example for acceptance suites that need a deterministic MCP mutation target. It exposes a `record_transaction` tool, persists ledger entries to a pytest-controlled JSON file, and provides Python oracle helpers such as `balance_cents()` and `read_entries()` so tests can verify final state without trusting an agent trace. See `examples/doki-ledger/README.md`.
 
 
