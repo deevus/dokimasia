@@ -159,6 +159,39 @@ def test_issue_flow(doki_factory):
 Invocation evidence proves that an approved executable path was used. It is not a substitute for independent domain-state verification. A good end-to-end test still asserts the resulting issue, ticket, cloud resource, or other business state through an oracle outside the agent's trace and stdout.
 
 
+## Agent tool-call assertions
+
+Use generic tool-call evidence when an acceptance suite needs to prove that an
+agent selected the intended agent-side tool. Dokimasia adapters expose these
+calls as normalized `TraceEvent(kind="tool.call")` entries on
+`result.trace_events`, and pytest helpers make the common assertions concise:
+
+```python
+from dokimasia.pytest import assert_tool_called, assert_tool_not_called, tool_calls
+
+result = doki.run("Inspect checkout flow before editing")
+
+assert_tool_called(result, tool="get_file_skeleton")
+assert_tool_called(
+    result,
+    tool="get_function",
+    where=lambda event: "finalizeCheckout" in event.raw.get("args", {}).get("function_names", []),
+)
+assert_tool_not_called(result, tool="read")
+```
+
+`tool_calls(result, tool=..., where=...)` returns the matching trace events
+unchanged, so suites can inspect raw adapter arguments or write ordering checks.
+The `raw` shape is adapter-specific; use it for suite-local checks rather than
+portable Dokimasia contracts.
+`assert_tool_called(...)` supports `times=`, `min=`, and `max=` count
+constraints. `assert_tool_not_called(...)` is shorthand for requiring zero
+matching calls.
+
+Tool-call evidence proves agent tool selection. It is not a substitute for
+command invocation evidence, MCP operation evidence, or independent domain-state
+verification.
+
 ## MCP acceptance testing
 
 Use normalized MCP evidence when an acceptance suite needs to prove that an agent
